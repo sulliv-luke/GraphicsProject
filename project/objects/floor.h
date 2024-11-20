@@ -2,6 +2,7 @@
 #define FLOOR_H
 
 #include <glm/glm.hpp>
+#include "utils/lightInfo.h"
 #include <glm/gtc/matrix_transform.hpp>
 #include <glad/gl.h>
 #include <iostream>
@@ -14,7 +15,7 @@ public:
     glm::vec3 scale;    // Size of the floor
 
     void initialize(glm::vec3 position, glm::vec3 scale, const char* texturePath);
-    void render(glm::mat4 cameraMatrix);
+    void render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition);
     void cleanup();
 
 private:
@@ -38,7 +39,7 @@ private:
     };
 
     GLuint vertexArrayID, vertexBufferID, indexBufferID, uvBufferID, textureID, programID;
-    GLuint mvpMatrixID, textureSamplerID;
+    GLuint mvpMatrixID, textureSamplerID, lightPositionID, lightColorID, lightIntensityID, lightDirectionID, cameraPositionID;
 
     GLuint LoadTextureTileBox(const char* texture_file_path);
 };

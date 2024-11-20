@@ -17,6 +17,7 @@
 #include "objects/floor.h"
 #include "objects/flag.h"
 #include "objects/sun.h"
+#include "utils/lightInfo.h"
 
 static GLFWwindow *window;
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
@@ -41,6 +42,7 @@ static glm::vec3 lightColor(1.0f, 1.0f, 1.0f);      // Warm light color
 static float lightIntensity = 1.2f;             // Brightness multiplier
 static glm::vec3 lightLookAt(91.074f, 114.013f, 213.723f); // Where the light is pointing
 static glm::vec3 lightDirection;               // Computed in each frame
+Light sunLightInfo(lightDirection, lightPosition, lightColor, lightLookAt, lightIntensity);
 
 
 // Mouse settings
@@ -389,8 +391,6 @@ struct Building {
 		glUniform3fv(lightColorID, 1, &lightColor[0]);
 		glUniform1f(lightIntensityID, lightIntensity);
 		glUniform3fv(cameraPositionID, 1, &cameraPosition[0]);
-		// Calculate light direction
-		lightDirection = glm::normalize(lightLookAt - lightPosition);
 
 		// Pass light direction to the shader
 		glUniform3fv(glGetUniformLocation(programID, "lightDirection"), 1, &lightDirection[0]);
@@ -564,6 +564,10 @@ int main(void)
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+		// Calculate light direction
+		lightDirection = glm::normalize(lightLookAt - lightPosition);
+		sunLightInfo.direction = lightDirection;
+
 		// Update view matrix
 		viewMatrix = glm::lookAt(cameraPosition, cameraPosition + cameraFront, cameraUp);
 		glm::mat4 vp = projectionMatrix * viewMatrix;
@@ -585,7 +589,7 @@ int main(void)
 		glDepthFunc(GL_LESS); // Reset depth function
 
 		// Render the floor
-		floor.render(vp);
+		floor.render(vp, sunLightInfo, cameraPosition);
 
 		// Render the buildings
 		for (Building building : buildings) {

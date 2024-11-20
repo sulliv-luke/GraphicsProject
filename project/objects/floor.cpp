@@ -1,3 +1,5 @@
+#include <utils/lightInfo.h>
+
 #include "Floor.h"
 
 GLuint Floor::LoadTextureTileBox(const char* texture_file_path) {
@@ -52,9 +54,14 @@ void Floor::initialize(glm::vec3 position, glm::vec3 scale, const char* textureP
     }
     mvpMatrixID = glGetUniformLocation(programID, "MVP");
     textureSamplerID = glGetUniformLocation(programID, "textureSampler");
+
+    lightPositionID = glGetUniformLocation(programID, "lightPosition");
+    lightColorID = glGetUniformLocation(programID, "lightColor");
+    lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
+    cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
 }
 
-void Floor::render(glm::mat4 cameraMatrix) {
+void Floor::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
     glUseProgram(programID);
 
     glEnableVertexAttribArray(0);
@@ -71,12 +78,26 @@ void Floor::render(glm::mat4 cameraMatrix) {
     modelMatrix = glm::translate(modelMatrix, position);
     modelMatrix = glm::scale(modelMatrix, scale);
 
+    glUniformMatrix4fv(glGetUniformLocation(programID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+    glUniformMatrix3fv(glGetUniformLocation(programID, "normalMatrix"), 1, GL_FALSE, &normalMatrix[0][0]);
+
     glm::mat4 mvp = cameraMatrix * modelMatrix;
     glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, textureID);
     glUniform1i(textureSamplerID, 0);
+
+    // Send lighting properties
+    glUniform3fv(lightPositionID, 1, &light.position[0]);
+    glUniform3fv(lightColorID, 1, &light.color[0]);
+    glUniform1f(lightIntensityID, light.intensity);
+    glUniform3fv(cameraPositionID, 1, &cameraPosition[0]);
+
+
+    // Pass light direction to the shader
+    glUniform3fv(glGetUniformLocation(programID, "lightDirection"), 1, &light.direction[0]);
 
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
 
