@@ -580,7 +580,8 @@ int main(void)
 
 		// Render the skybox
 		glDepthFunc(GL_LEQUAL); // Change depth function to avoid z-fighting
-		skybox.render(vp);
+		glm::mat4 skyboxModel = glm::translate(glm::mat4(1.0f), cameraPosition);
+		skybox.render(vp * skyboxModel);
 		glDepthFunc(GL_LESS); // Reset depth function
 
 		// Render the floor
