@@ -597,7 +597,7 @@ int main(void)
 		}
 
 		// Render the flag
-		flag.render(vp);
+		flag.render(vp, sunLightInfo, cameraPosition);
 
 		sun.render(vp);
 

@@ -5,6 +5,7 @@
 #include <vector>
 #include <stb/stb_image.h> // Ensure this header is included for texture loading
 #include <iostream>
+#include "utils/lightInfo.h"
 
 GLuint LoadTexture2D(const char* texture_file_path) {
     int w, h, channels;
@@ -38,19 +39,24 @@ void Flag::initializePole(glm::vec3 polePosition, glm::vec3 poleScale) {
     std::vector<glm::vec3> poleVertices;
     std::vector<glm::vec2> poleUVs;
     std::vector<GLuint> poleIndices;
+    std::vector<glm::vec3> poleNormals;  // Normals
 
-    // Generate vertices and UVs for the pole
+    // Generate vertices, normals, and UVs for the pole
     for (int i = 0; i <= segments; ++i) {
         float theta = i * 2.0f * M_PI / segments;
         float x = radius * cos(theta);
         float z = radius * sin(theta);
 
+        glm::vec3 normal = glm::normalize(glm::vec3(x, 0.0f, z)); // Normal is perpendicular to the surface
+
         // Bottom circle
         poleVertices.push_back(glm::vec3(x, 0.0f, z));
+        poleNormals.push_back(normal);
         poleUVs.push_back(glm::vec2((float)i / segments, 0.0f));
 
         // Top circle
         poleVertices.push_back(glm::vec3(x, height, z));
+        poleNormals.push_back(normal);
         poleUVs.push_back(glm::vec2((float)i / segments, 1.0f));
     }
 
@@ -78,15 +84,24 @@ void Flag::initializePole(glm::vec3 polePosition, glm::vec3 poleScale) {
     glBindBuffer(GL_ARRAY_BUFFER, poleVBO);
     glBufferData(GL_ARRAY_BUFFER, poleVertices.size() * sizeof(glm::vec3), &poleVertices[0], GL_STATIC_DRAW);
 
+    glGenBuffers(1, &poleNormalBuffer);
+    glBindBuffer(GL_ARRAY_BUFFER, poleNormalBuffer);
+    glBufferData(GL_ARRAY_BUFFER, poleNormals.size() * sizeof(glm::vec3), &poleNormals[0], GL_STATIC_DRAW);
+
     glGenBuffers(1, &poleEBO);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, poleEBO);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, poleIndices.size() * sizeof(GLuint), &poleIndices[0], GL_STATIC_DRAW);
+
 
     poleProgramID = LoadShadersFromFile("../project/objects/pole.vert", "../project/objects/pole.frag");
     if (poleProgramID == 0) {
         std::cerr << "Failed to load pole shaders." << std::endl;
     }
     poleMVPMatrixID = glGetUniformLocation(poleProgramID, "MVP");
+    lightPositionID = glGetUniformLocation(poleProgramID, "lightPosition");
+    lightColorID = glGetUniformLocation(poleProgramID, "lightColor");
+    lightIntensityID = glGetUniformLocation(poleProgramID, "lightIntensity");
+    cameraPositionID = glGetUniformLocation(poleProgramID, "cameraPosition");
 }
 
 
@@ -169,6 +184,10 @@ void Flag::initialize(glm::vec3 position, glm::vec3 scale, const char* texturePa
         std::cerr << "Failed to load flag texture." << std::endl;
     }
     textureSamplerID = glGetUniformLocation(programID, "textureSampler");
+    lightPositionID = glGetUniformLocation(programID, "lightPosition");
+    lightColorID = glGetUniformLocation(programID, "lightColor");
+    lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
+    cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
 
     // Store start time
     startTime = glfwGetTime();
@@ -197,7 +216,7 @@ void Flag::initialize(glm::vec3 position, glm::vec3 scale, const char* texturePa
 
 
 
-void Flag::render(glm::mat4 cameraMatrix) {
+void Flag::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
     glUseProgram(programID);
 
     // Model matrix
@@ -205,9 +224,17 @@ void Flag::render(glm::mat4 cameraMatrix) {
     modelMatrix = glm::translate(modelMatrix, position);
     modelMatrix = glm::scale(modelMatrix, scale);
 
+
+
+    // Normal matrix (transpose of the inverse of the upper-left 3x3 part of the model matrix)
+    glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+
     // MVP matrix
     glm::mat4 mvp = cameraMatrix * modelMatrix;
     glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(programID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+    glUniformMatrix3fv(glGetUniformLocation(programID, "normalMatrix"), 1, GL_FALSE, &normalMatrix[0][0]);
+
 
     // Time uniform
     float currentTime = glfwGetTime() - startTime;
@@ -231,6 +258,12 @@ void Flag::render(glm::mat4 cameraMatrix) {
     glBindTexture(GL_TEXTURE_2D, textureID);
     glUniform1i(textureSamplerID, 0);
 
+    glUniform3fv(glGetUniformLocation(programID, "lightDirection"), 1, &light.direction[0]);
+    glUniform3fv(glGetUniformLocation(programID, "lightColor"), 1, &light.color[0]);
+    glUniform3fv(glGetUniformLocation(programID, "cameraPosition"), 1, &cameraPosition[0]);
+    glUniform1f(glGetUniformLocation(programID, "lightIntensity"), light.intensity);
+
+
     // Draw elements
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
     glDrawElements(GL_TRIANGLES, numSegments * numSegments * 6, GL_UNSIGNED_INT, 0);
@@ -239,18 +272,23 @@ void Flag::render(glm::mat4 cameraMatrix) {
     glDisableVertexAttribArray(1);
 
     // Render the pole
-    renderPole(cameraMatrix);
+    renderPole(cameraMatrix, light, cameraPosition);
 }
 
-void Flag::renderPole(glm::mat4 cameraMatrix) {
+void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
     glUseProgram(poleProgramID);
 
     glm::mat4 poleModelMatrix = glm::mat4(1.0f);
     poleModelMatrix = glm::translate(poleModelMatrix, polePosition);
     poleModelMatrix = glm::scale(poleModelMatrix, poleScale);
 
+    // Normal matrix (transpose of the inverse of the upper-left 3x3 part of the model matrix)
+    glm::mat3 poleNormalMatrix  = glm::transpose(glm::inverse(glm::mat3(poleModelMatrix)));
+
     glm::mat4 poleMVP = cameraMatrix * poleModelMatrix;
     glUniformMatrix4fv(poleMVPMatrixID, 1, GL_FALSE, &poleMVP[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(poleProgramID, "modelMatrix"), 1, GL_FALSE, &poleModelMatrix[0][0]);
+    glUniformMatrix3fv(glGetUniformLocation(poleProgramID, "normalMatrix"), 1, GL_FALSE, &poleNormalMatrix[0][0]);
 
     glBindVertexArray(poleVAO);
 
@@ -262,9 +300,20 @@ void Flag::renderPole(glm::mat4 cameraMatrix) {
     glBindBuffer(GL_ARRAY_BUFFER, poleUVBuffer);
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
+    glEnableVertexAttribArray(2); // Assuming location 2 for normals
+    glBindBuffer(GL_ARRAY_BUFFER, poleNormalBuffer);
+    glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, poleTextureID);
     glUniform1i(poleTextureSamplerID, 0);
+
+    // Pass lighting uniforms
+    glUniform3fv(glGetUniformLocation(poleProgramID, "lightDirection"), 1, &light.direction[0]);
+    glUniform3fv(glGetUniformLocation(poleProgramID, "lightColor"), 1, &light.color[0]);
+    glUniform3fv(glGetUniformLocation(poleProgramID, "cameraPosition"), 1, &cameraPosition[0]);
+    glUniform1f(glGetUniformLocation(poleProgramID, "lightIntensity"), light.intensity);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, poleEBO);
     glDrawElements(GL_TRIANGLES, 36 * 6, GL_UNSIGNED_INT, 0);
