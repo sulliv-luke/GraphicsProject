@@ -579,7 +579,10 @@ int main(void)
 				  << std::endl;
 
 		// Render the skybox
+		glDepthFunc(GL_LEQUAL); // Change depth function to avoid z-fighting
 		skybox.render(vp);
+		glDepthFunc(GL_LESS); // Reset depth function
+
 		// Render the floor
 		floor.render(vp);
 
