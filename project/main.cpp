@@ -36,10 +36,10 @@ static float cameraSpeed = 100.0f;                      // Movement speed
 static float deltaTime = 0.0f;                        // Time between frames
 static float lastFrame = 0.0f;                        // Time of the last frame
 
-static glm::vec3 lightPosition(170.0f, 362.3f, 487.0f); // Sun's position
+static glm::vec3 lightPosition(300.0f, 362.3f, 487.0f); // Sun's position
 static glm::vec3 lightColor(1.0f, 1.0f, 1.0f);      // Warm light color
 static float lightIntensity = 1.2f;             // Brightness multiplier
-static glm::vec3 lightLookAt(0.0f, 0.0f, 0.0f); // Where the light is pointing
+static glm::vec3 lightLookAt(91.074f, 114.013f, 213.723f); // Where the light is pointing
 static glm::vec3 lightDirection;               // Computed in each frame
 
 
@@ -466,7 +466,7 @@ int main(void)
 	glEnable(GL_CULL_FACE);
 
 	SkyBox skybox;
-	skybox.initialize(glm::vec3(0,0,0), glm::vec3(500, 500, 500));
+	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1000, 1000, 1000));
 
 	Floor floor;
 	floor.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 1.0f, 500.0f), "../project/floor.jpg");
@@ -579,7 +579,11 @@ int main(void)
 				  << std::endl;
 
 		// Render the skybox
-		skybox.render(vp);
+		glDepthFunc(GL_LEQUAL); // Change depth function to avoid z-fighting
+		glm::mat4 skyboxModel = glm::translate(glm::mat4(1.0f), cameraPosition);
+		skybox.render(vp * skyboxModel);
+		glDepthFunc(GL_LESS); // Reset depth function
+
 		// Render the floor
 		floor.render(vp);
 
