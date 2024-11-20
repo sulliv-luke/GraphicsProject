@@ -23,6 +23,7 @@ add_executable(final_project
 		project/objects/stb_image_impl.cpp
 		project/objects/floor.cpp
 		project/objects/flag.cpp
+		project/objects/sun.cpp
 )
 
 target_link_libraries(final_project

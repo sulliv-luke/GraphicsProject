@@ -1,21 +1,39 @@
 #version 330 core
 
-in vec3 color;
-in vec2 uv;
+in vec3 fragNormal;
+in vec3 fragPosition;
+in vec2 fragUV;
 
-// TODO: To add UV input to this fragment shader
+out vec4 FragColor;
 
-// TODO: To add the texture sampler
 uniform sampler2D textureSampler;
+uniform vec3 lightDirection; // Direction of the light
+uniform vec3 lightColor;
+uniform vec3 lightPosition;
+uniform vec3 cameraPosition;
+uniform float lightIntensity;
 
-out vec4 finalColor;
+void main() {
+	vec3 normal = normalize(fragNormal);
+	vec3 lightDir = normalize(-lightDirection); // Invert direction if necessary
 
+	// Diffuse lighting
+	float diff = max(dot(normal, lightDir), 0.0);
 
-void main()
-{
-	// Perform texture lookup using the sampler and UV coordinates
-	vec3 texColor = texture(textureSampler, uv).rgb;
+	// Specular lighting
+	vec3 viewDir = normalize(cameraPosition - fragPosition);
+	vec3 reflectDir = reflect(-lightDir, normal);
+	float shininess = 32.0f;
+	float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 
-	// Assign the sampled color to the output
-	finalColor = vec4(texColor, 1.0);
+	vec3 ambient = 0.1 * lightColor; // Ambient light
+	vec3 diffuse = diff * lightColor;
+	vec3 specular = spec * lightColor;
+
+	vec3 finalColor = ambient + diffuse * lightIntensity + specular * lightIntensity;
+
+	// Combine with texture
+	vec4 textureColor = texture(textureSampler, fragUV);
+	FragColor = vec4(finalColor * textureColor.rgb, textureColor.a);
+
 }

@@ -289,4 +289,5 @@ void Flag::cleanup() {
     glDeleteTextures(1, &textureID);
     glDeleteVertexArrays(1, &vertexArrayID);
     glDeleteProgram(programID);
+    cleanupPole();
 }

@@ -16,6 +16,7 @@
 #include <random>
 #include "objects/floor.h"
 #include "objects/flag.h"
+#include "objects/sun.h"
 
 static GLFWwindow *window;
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
@@ -34,6 +35,13 @@ static glm::vec3 cameraUp(0.0f, 1.0f, 0.0f);          // World up
 static float cameraSpeed = 100.0f;                      // Movement speed
 static float deltaTime = 0.0f;                        // Time between frames
 static float lastFrame = 0.0f;                        // Time of the last frame
+
+static glm::vec3 lightPosition(170.0f, 362.3f, 487.0f); // Sun's position
+static glm::vec3 lightColor(1.0f, 1.0f, 1.0f);      // Warm light color
+static float lightIntensity = 1.2f;             // Brightness multiplier
+static glm::vec3 lightLookAt(0.0f, 0.0f, 0.0f); // Where the light is pointing
+static glm::vec3 lightDirection;               // Computed in each frame
+
 
 // Mouse settings
 static bool firstMouse = true;
@@ -111,6 +119,39 @@ struct Building {
 		1.0f, -1.0f, -1.0f,
 		1.0f, -1.0f, 1.0f,
 		-1.0f, -1.0f, 1.0f,
+	};
+
+	GLfloat normal_buffer_data[72] = {
+		// Front face
+		0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, 1.0f,
+		0.0f, 0.0f, 1.0f,
+		// Back face
+		0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, -1.0f,
+		0.0f, 0.0f, -1.0f,
+		// Other faces...
+		-1.0f, 0.0f, 0.0f,
+		-1.0f, 0.0f, 0.0f,
+		-1.0f, 0.0f, 0.0f,
+		-1.0f, 0.0f, 0.0f,
+		 // Other faces...
+		 1.0f, 0.0f, 0.0f,
+		 1.0f, 0.0f, 0.0f,
+		 1.0f, 0.0f, 0.0f,
+		 1.0f, 0.0f, 0.0f,
+
+		 0.0f, 1.0f, 0.0f,
+		 0.0f, 1.0f, 0.0f,
+		 0.0f, 1.0f, 0.0f,
+		 0.0f, 1.0f, 0.0f,
+
+		0.0f, -1.0f, 0.0f,
+		0.0f, -1.0f, 0.0f,
+		0.0f, -1.0f, 0.0f,
+		0.0f, -1.0f, 0.0f,
 	};
 
 	GLfloat color_buffer_data[72] = {
@@ -219,6 +260,11 @@ struct Building {
 	GLuint mvpMatrixID;
 	GLuint textureSamplerID;
 	GLuint programID;
+	GLuint lightPositionID;
+	GLuint lightColorID;
+	GLuint lightIntensityID;
+	GLuint cameraPositionID;
+	GLuint normalBufferID;
 
 	void initialize(glm::vec3 position, glm::vec3 scale) {
 		// Define scale of the building geometry
@@ -239,6 +285,10 @@ struct Building {
 		glGenBuffers(1, &colorBufferID);
 		glBindBuffer(GL_ARRAY_BUFFER, colorBufferID);
 		glBufferData(GL_ARRAY_BUFFER, sizeof(color_buffer_data), color_buffer_data, GL_STATIC_DRAW);
+
+		glGenBuffers(1, &normalBufferID);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(normal_buffer_data), normal_buffer_data, GL_STATIC_DRAW);
 
 		/*
 		 *Typically, texture coordinates are stored in an array in pairs,
@@ -281,6 +331,11 @@ struct Building {
         // -------------------------------------
         // -------------------------------------
 		textureSamplerID = glGetUniformLocation(programID,"textureSampler");
+		lightPositionID = glGetUniformLocation(programID, "lightPosition");
+		lightColorID = glGetUniformLocation(programID, "lightColor");
+		lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
+		cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
+
 	}
 
 	void render(glm::mat4 cameraMatrix) {
@@ -311,6 +366,10 @@ struct Building {
 
 		glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
+		glm::mat3 normalMatrix = glm::transpose(glm::inverse(glm::mat3(modelMatrix)));
+		glUniformMatrix4fv(glGetUniformLocation(programID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+		glUniformMatrix3fv(glGetUniformLocation(programID, "normalMatrix"), 1, GL_FALSE, &normalMatrix[0][0]);
+
 		// TODO: Enable UV buffer and texture sampler
 		// ------------------------------------------
         // ------------------------------------------
@@ -320,6 +379,23 @@ struct Building {
 		glActiveTexture(GL_TEXTURE0);
 		glBindTexture(GL_TEXTURE_2D, textureID);
 		glUniform1i(textureSamplerID, 0);
+
+		glEnableVertexAttribArray(3);
+		glBindBuffer(GL_ARRAY_BUFFER, normalBufferID);
+		glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+
+		glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+		glUniform3fv(lightColorID, 1, &lightColor[0]);
+		glUniform1f(lightIntensityID, lightIntensity);
+		glUniform3fv(cameraPositionID, 1, &cameraPosition[0]);
+		// Calculate light direction
+		lightDirection = glm::normalize(lightLookAt - lightPosition);
+
+		// Pass light direction to the shader
+		glUniform3fv(glGetUniformLocation(programID, "lightDirection"), 1, &lightDirection[0]);
+
+
 
 		// Draw the box
 		glDrawElements(
@@ -437,6 +513,10 @@ int main(void)
 		}
 	}
 
+	// In your main program
+	Sun sun;
+	sun.initialize(lightPosition, 30.0f, lightColor, "../project/sun.vert", "../project/sun.frag");
+
     // ---------------------------
 
 	// Camera setup
@@ -488,6 +568,16 @@ int main(void)
 		viewMatrix = glm::lookAt(cameraPosition, cameraPosition + cameraFront, cameraUp);
 		glm::mat4 vp = projectionMatrix * viewMatrix;
 
+		// Debug: Print camera position and lookat direction
+		std::cout << "Camera Position: ("
+				  << cameraPosition.x << ", "
+				  << cameraPosition.y << ", "
+				  << cameraPosition.z << ") LookAt: ("
+				  << (cameraPosition + cameraFront).x << ", "
+				  << (cameraPosition + cameraFront).y << ", "
+				  << (cameraPosition + cameraFront).z << ")"
+				  << std::endl;
+
 		// Render the skybox
 		skybox.render(vp);
 		// Render the floor
@@ -500,6 +590,8 @@ int main(void)
 
 		// Render the flag
 		flag.render(vp);
+
+		sun.render(vp);
 
 
 		// Swap buffers
@@ -517,6 +609,7 @@ int main(void)
 	skybox.cleanup();
 	flag.cleanup();
 	floor.cleanup();
+	sun.cleanup();
 
 	// Close OpenGL window and terminate GLFW
 	glfwTerminate();

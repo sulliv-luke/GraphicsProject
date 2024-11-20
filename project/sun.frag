@@ -1,9 +1,10 @@
 #version 330 core
 
-out vec4 color;
+out vec4 FragColor;
 
-uniform vec3 sunColor; // The color of the sun
+uniform vec3 lightColor;
 
 void main() {
-    color = vec4(sunColor, 1.0); // Set the sun's color with full opacity
+    // Simple emissive color for the sun
+    FragColor = vec4(lightColor, 1.0);
 }
