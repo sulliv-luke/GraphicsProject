@@ -110,6 +110,11 @@ void Sun::render(glm::mat4 cameraMatrix) {
     glDisableVertexAttribArray(1);
 }
 
+void Sun::updatePosition(const glm::vec3& newPosition) {
+    this->position = newPosition;
+}
+
+
 void Sun::cleanup() {
     glDeleteBuffers(1, &sunVBO);
     glDeleteBuffers(1, &sunUVBuffer);

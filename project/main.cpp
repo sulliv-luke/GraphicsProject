@@ -57,6 +57,9 @@ static float viewAzimuth = 0.f;
 static float viewPolar = 0.f;
 static float viewDistance = 300.0f;
 
+static float lightSpeed = 100.0f; // Movement speed for the light source
+
+
 static GLuint LoadTextureTileBox(const char *texture_file_path) {
     int w, h, channels;
     uint8_t* img = stbi_load(texture_file_path, &w, &h, &channels, 3);
@@ -80,6 +83,7 @@ static GLuint LoadTextureTileBox(const char *texture_file_path) {
 
     return texture;
 }
+
 
 struct Building {
 	glm::vec3 position;		// Position of the box
@@ -421,6 +425,26 @@ struct Building {
 	}
 };
 
+void generateBuildingBlock(float x0, float z0, int rows, int cols, float spacing, std::vector<Building> &buildings, std::mt19937 &gen, std::uniform_real_distribution<> &height_dist, std::uniform_real_distribution<> &offset_dist) {
+	for (int i = 0; i < rows; ++i) {
+		for (int j = 0; j < cols; ++j) {
+			Building b;
+
+			// Randomize position with slight offset
+			float x = x0 + i * spacing + offset_dist(gen);
+			float z = z0 + j * spacing + offset_dist(gen);
+			glm::vec3 position = glm::vec3(x, 0, z);
+
+			// Randomize height while keeping width and depth constant
+			float height = height_dist(gen);
+			glm::vec3 scale = glm::vec3(16.0f, height, 16.0f);
+			position.y = height;
+			b.initialize(position, scale);
+			buildings.push_back(b);
+		}
+	}
+}
+
 int main(void)
 {
 	// Initialise GLFW
@@ -466,13 +490,13 @@ int main(void)
 	glEnable(GL_CULL_FACE);
 
 	SkyBox skybox;
-	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1000, 1000, 1000));
+	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
 
 	Floor floor;
 	floor.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 1.0f, 500.0f), "../project/floor.jpg");
 
 	Flag flag;
-	glm::vec3 flagPosition = cameraPosition + cameraFront * 50.0f; // Adjust distance as needed
+	glm::vec3 flagPosition = glm::vec3(0,0,0);// Adjust distance as needed
 	// Add a height offset to the y-component
 	float heightOffset = 100.0f; // Adjust this value as needed
 	flagPosition.y += heightOffset;
@@ -483,11 +507,13 @@ int main(void)
 	std::srand(static_cast<unsigned int>(std::time(0)));
 
 
-	// TODO: Create more buildings
-	// ---------------------------
-	int rows =5;
-	int cols = 5;
-	float spacing =50.0f;
+	int rows = 7;
+	int cols = 7;
+	float spacing = 50.0f;
+
+	float margin = -200.0f; // Adjust as needed
+	float floorSize = 500.0f;
+	float halfFloor = floorSize / 2.0f;
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -495,23 +521,25 @@ int main(void)
 	std::uniform_real_distribution<> offset_dist(-5.0f, 5.0f);
 	std::vector<Building> buildings;
 
-	for (int i = 0; i < rows; ++i) {
-		for (int j = 0; j < cols; ++j) {
-			Building b;
+	// Block 1 (Bottom-left corner)
+	float x0_1 = -halfFloor + margin;
+	float z0_1 = -halfFloor + margin;
+	generateBuildingBlock(x0_1, z0_1, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
-			// Randomize position with slight offset
-			float x = i * spacing + offset_dist(gen);
-			float z = j * spacing + offset_dist(gen);
-			glm::vec3 position = glm::vec3(x, 0, z);
+	// Block 2 (Top-left corner)
+	float x0_2 = -halfFloor + margin;
+	float z0_2 = halfFloor - margin - (cols - 1) * spacing;
+	generateBuildingBlock(x0_2, z0_2, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
-			// Randomize height while keeping width and depth constant
-			float height = height_dist(gen);
-			glm::vec3 scale = glm::vec3(16.0f, height, 16.0f);
-			position.y=height;
-			b.initialize(position, scale);
-			buildings.push_back(b);
-		}
-	}
+	// Block 3 (Bottom-right corner)
+	float x0_3 = halfFloor - margin - (rows - 1) * spacing;
+	float z0_3 = -halfFloor + margin;
+	generateBuildingBlock(x0_3, z0_3, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
+
+	// Block 4 (Top-right corner)
+	float x0_4 = halfFloor - margin - (rows - 1) * spacing;
+	float z0_4 = halfFloor - margin - (cols - 1) * spacing;
+	generateBuildingBlock(x0_4, z0_4, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
 	// In your main program
 	Sun sun;
@@ -560,6 +588,26 @@ int main(void)
 				cameraPosition = newPos;
 			}
 		}
+		if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+			lightPosition.z -= lightSpeed * deltaTime; // Move light forwarD
+		}
+		if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) {
+			lightPosition.z += lightSpeed * deltaTime; // Move light backward
+		}
+		if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) {
+			lightPosition.x -= lightSpeed * deltaTime; // Move light left
+		}
+		if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
+			lightPosition.y += lightSpeed * deltaTime; // Move light up
+		}
+		if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+			lightPosition.x += lightSpeed * deltaTime; // Move light right
+		}
+		if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
+			lightPosition.y -= lightSpeed * deltaTime; // Move light down
+		}
+
+		sun.updatePosition(lightPosition);
 
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);

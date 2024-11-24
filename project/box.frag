@@ -23,7 +23,7 @@ void main() {
 	// Specular lighting
 	vec3 viewDir = normalize(cameraPosition - fragPosition);
 	vec3 reflectDir = reflect(-lightDir, normal);
-	float shininess = 32.0f;
+	float shininess = 60.0f;
 	float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 
 	vec3 ambient = 0.1 * lightColor; // Ambient light

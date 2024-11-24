@@ -13,6 +13,7 @@ public:
     void initialize(glm::vec3 position, float radius, glm::vec3 lightColor, const std::string& vertexShaderPath, const std::string& fragmentShaderPath);
     void render(glm::mat4 cameraMatrix);
     void cleanup();
+    void updatePosition(const glm::vec3& newPosition);
 
 private:
     glm::vec3 position;
