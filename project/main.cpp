@@ -18,6 +18,9 @@
 #include "objects/flag.h"
 #include "objects/sun.h"
 #include "utils/lightInfo.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
+
 
 static GLFWwindow *window;
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
@@ -37,10 +40,10 @@ static float cameraSpeed = 100.0f;                      // Movement speed
 static float deltaTime = 0.0f;                        // Time between frames
 static float lastFrame = 0.0f;                        // Time of the last frame
 
-static glm::vec3 lightPosition(300.0f, 362.3f, 487.0f); // Sun's position
+static glm::vec3 lightPosition(500.0f, 500.0f, 0.0f); // Sun's position
 static glm::vec3 lightColor(1.0f, 1.0f, 1.0f);      // Warm light color
 static float lightIntensity = 1.2f;             // Brightness multiplier
-static glm::vec3 lightLookAt(91.074f, 114.013f, 213.723f); // Where the light is pointing
+static glm::vec3 lightLookAt(0.0f, 0.0f, 0.0f); // Where the light is pointing
 static glm::vec3 lightDirection;               // Computed in each frame
 Light sunLightInfo(lightDirection, lightPosition, lightColor, lightLookAt, lightIntensity);
 
@@ -58,6 +61,12 @@ static float viewPolar = 0.f;
 static float viewDistance = 300.0f;
 
 static float lightSpeed = 100.0f; // Movement speed for the light source
+
+// Shadow mapping parameters
+const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+GLuint depthMapFBO;
+GLuint depthMap;
+
 
 
 static GLuint LoadTextureTileBox(const char *texture_file_path) {
@@ -83,6 +92,27 @@ static GLuint LoadTextureTileBox(const char *texture_file_path) {
 
     return texture;
 }
+
+static void saveDepthTexture(GLuint fbo, std::string filename) {
+	int width = SHADOW_WIDTH; // Shadow map width
+	int height = SHADOW_HEIGHT; // Shadow map height
+	int channels = 3;
+
+	std::vector<float> depth(width * height);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, depth.data());
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	std::vector<unsigned char> img(width * height * 3);
+	for (int i = 0; i < width * height; ++i) {
+		img[3 * i] = img[3 * i + 1] = img[3 * i + 2] = static_cast<unsigned char>(depth[i] * 255.0f);
+	}
+
+	stbi_write_png(filename.c_str(), width, height, channels, img.data(), width * channels);
+}
+bool saveDepthMap = false;
+
+
 
 
 struct Building {
@@ -271,6 +301,9 @@ struct Building {
 	GLuint lightIntensityID;
 	GLuint cameraPositionID;
 	GLuint normalBufferID;
+	// Shader variable IDs for shadow mapping
+	GLuint lightSpaceMatrixID;
+	GLuint shadowMapID;
 
 	void initialize(glm::vec3 position, glm::vec3 scale) {
 		// Define scale of the building geometry
@@ -341,10 +374,14 @@ struct Building {
 		lightColorID = glGetUniformLocation(programID, "lightColor");
 		lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
 		cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
+		// After loading the shader program
+		lightSpaceMatrixID = glGetUniformLocation(programID, "lightSpaceMatrix");
+		shadowMapID = glGetUniformLocation(programID, "shadowMap");
+
 
 	}
 
-	void render(glm::mat4 cameraMatrix) {
+	void render(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix, GLuint depthMap) {
 		glUseProgram(programID);
 
 		glEnableVertexAttribArray(0);
@@ -356,6 +393,14 @@ struct Building {
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		// Set the light space matrix uniform
+		glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Bind the depth map to texture unit 1
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glUniform1i(shadowMapID, 1);
 
 		// TODO: Model transform
 		// ----------------------
@@ -414,6 +459,31 @@ struct Building {
         //glDisableVertexAttribArray(2);
 	}
 
+	void renderDepth(GLuint shaderProgramID, glm::mat4 lightSpaceMatrix) {
+		glUseProgram(shaderProgramID);
+
+		// Set uniforms
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		glm::mat4 modelMatrix = glm::mat4(1.0f);
+		modelMatrix = glm::translate(modelMatrix, position);
+		modelMatrix = glm::scale(modelMatrix, scale);
+
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, (void*)0);
+
+		glDisableVertexAttribArray(0);
+	}
+
 	void cleanup() {
 		glDeleteBuffers(1, &vertexBufferID);
 		glDeleteBuffers(1, &colorBufferID);
@@ -444,6 +514,67 @@ void generateBuildingBlock(float x0, float z0, int rows, int cols, float spacing
 		}
 	}
 }
+
+GLuint frustumVAO, frustumVBO;
+void setupFrustum() {
+	// Generate VAO and VBO for the frustum
+	glGenVertexArrays(1, &frustumVAO);
+	glGenBuffers(1, &frustumVBO);
+
+	glBindVertexArray(frustumVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, frustumVBO);
+
+	// Allocate buffer space (no data yet, as the frustum will update dynamically)
+	glBufferData(GL_ARRAY_BUFFER, 24 * sizeof(glm::vec3), nullptr, GL_DYNAMIC_DRAW);
+
+	// Enable vertex attribute
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glEnableVertexAttribArray(0);
+
+	glBindVertexArray(0);
+}
+
+void renderFrustum(const glm::mat4& lightProjection, const glm::mat4& lightView, const glm::mat4& vpMatrix, GLuint shaderProgram) {
+	// Frustum corners in light's NDC space
+	std::vector<glm::vec4> frustumCorners = {
+		{-1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f, -1.0f, 1.0f},
+		{1.0f, -1.0f, -1.0f, 1.0f}, {1.0f,  1.0f, -1.0f, 1.0f},
+		{1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f,  1.0f, -1.0f, 1.0f},
+		{-1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f, -1.0f, -1.0f, 1.0f},
+
+		{-1.0f, -1.0f,  1.0f, 1.0f}, {1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f, -1.0f,  1.0f, 1.0f}, {1.0f,  1.0f,  1.0f, 1.0f},
+		{1.0f,  1.0f,  1.0f, 1.0f}, {-1.0f,  1.0f,  1.0f, 1.0f},
+		{-1.0f,  1.0f,  1.0f, 1.0f}, {-1.0f, -1.0f,  1.0f, 1.0f},
+
+		{-1.0f, -1.0f, -1.0f, 1.0f}, {-1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f,  1.0f, -1.0f, 1.0f}, {1.0f,  1.0f,  1.0f, 1.0f},
+		{-1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f,  1.0f,  1.0f, 1.0f}
+	};
+
+	glm::mat4 lightSpaceInverse = glm::inverse(lightProjection * lightView);
+
+	// Transform corners to world space
+	std::vector<glm::vec3> worldCorners;
+	for (auto& corner : frustumCorners) {
+		glm::vec4 worldPos = lightSpaceInverse * corner;
+		worldCorners.push_back(glm::vec3(worldPos) / worldPos.w);
+	}
+
+	// Update VBO with the transformed corners
+	glBindBuffer(GL_ARRAY_BUFFER, frustumVBO);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, worldCorners.size() * sizeof(glm::vec3), worldCorners.data());
+
+	// Render the frustum
+	glUseProgram(shaderProgram);
+	glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "vpMatrix"), 1, GL_FALSE, &vpMatrix[0][0]);
+
+	glBindVertexArray(frustumVAO);
+	glDrawArrays(GL_LINES, 0, 24); // 24 vertices for the lines
+	glBindVertexArray(0);
+}
+
 
 int main(void)
 {
@@ -489,6 +620,33 @@ int main(void)
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
+	// Create the depth framebuffer
+	glGenFramebuffers(1, &depthMapFBO);
+
+	// Create the depth texture
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+				 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+	// Attach the depth texture as the framebuffer's depth buffer
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	GLuint depthShaderProgramID = LoadShadersFromFile("../project/depth.vert", "../project/depth.frag");
+	GLuint frustumShaderProgramID = LoadShadersFromFile("../project/frustum.vert", "../project/frustum.frag");
+
+	setupFrustum(); // Call during initialization
+
 	SkyBox skybox;
 	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
 
@@ -501,7 +659,7 @@ int main(void)
 	float heightOffset = 100.0f; // Adjust this value as needed
 	flagPosition.y += heightOffset;
 	glm::vec3 flagScale = glm::vec3(30.0f, 15.0f, 1.0f); // Adjust size as needed
-	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
+	//flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
 	// Seed random number generator for varied building sizes and positions
 	std::srand(static_cast<unsigned int>(std::time(0)));
@@ -609,48 +767,62 @@ int main(void)
 
 		sun.updatePosition(lightPosition);
 
+		// 1. Render depth map from light's point of view
+		glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+		glClear(GL_DEPTH_BUFFER_BIT);
 
+		glUseProgram(depthShaderProgramID);
+
+		// Compute light's view and projection matrices
+		float near_plane = 1.0f, far_plane = 2000.0f;
+		glm::mat4 lightProjection = glm::ortho(-1000.0f, 1000.0f, -1000.0f, 1000.0f, near_plane, far_plane);
+		glm::mat4 lightView = glm::lookAt(lightPosition, lightLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+		// Set the uniform for the light space matrix
+		glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Render the scene (buildings and floor) from the light's perspective
+		for (Building& building : buildings) {
+			building.renderDepth(depthShaderProgramID, lightSpaceMatrix);
+		}
+		floor.renderDepth(depthShaderProgramID, lightSpaceMatrix);
+
+		// Unbind the framebuffer
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		if (saveDepthMap) {
+			saveDepthTexture(depthMapFBO, "depth_map.png");
+			std::cout << "Depth map saved to depth_map.png" << std::endl;
+			saveDepthMap = false; // Reset the flag after saving
+		}
+
+
+		// Reset viewport
+		glViewport(0, 0, 1024, 768);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// Calculate light direction
+		// Calculate light direction (if it changes over time)
 		lightDirection = glm::normalize(lightLookAt - lightPosition);
 		sunLightInfo.direction = lightDirection;
 
-		// Update view matrix
+		// Update view and projection matrices
 		viewMatrix = glm::lookAt(cameraPosition, cameraPosition + cameraFront, cameraUp);
 		glm::mat4 vp = projectionMatrix * viewMatrix;
 
-		// Debug: Print camera position and lookat direction
-		std::cout << "Camera Position: ("
-				  << cameraPosition.x << ", "
-				  << cameraPosition.y << ", "
-				  << cameraPosition.z << ") LookAt: ("
-				  << (cameraPosition + cameraFront).x << ", "
-				  << (cameraPosition + cameraFront).y << ", "
-				  << (cameraPosition + cameraFront).z << ")"
-				  << std::endl;
-
-		// Render the skybox
-		glDepthFunc(GL_LEQUAL); // Change depth function to avoid z-fighting
+		// Render the skybox, floor, buildings, and sun
+		glDepthFunc(GL_LEQUAL);
 		glm::mat4 skyboxModel = glm::translate(glm::mat4(1.0f), cameraPosition);
 		skybox.render(vp * skyboxModel);
-		glDepthFunc(GL_LESS); // Reset depth function
+		glDepthFunc(GL_LESS);
 
-		// Render the floor
-		floor.render(vp, sunLightInfo, cameraPosition);
-
-		// Render the buildings
-		for (Building building : buildings) {
-			building.render(vp);
+		floor.render(vp, lightSpaceMatrix, depthMap, sunLightInfo, cameraPosition);
+		for (Building& building : buildings) {
+			building.render(vp, lightSpaceMatrix, depthMap);
 		}
-
-		// Render the flag
-		flag.render(vp, sunLightInfo, cameraPosition);
-
 		sun.render(vp);
+		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 
-
-		// Swap buffers
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
@@ -663,7 +835,7 @@ int main(void)
 	}
 
 	skybox.cleanup();
-	flag.cleanup();
+	//flag.cleanup();
 	floor.cleanup();
 	sun.cleanup();
 
@@ -679,6 +851,10 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, GL_TRUE); // Close window
+	}
+	// Check for the 'P' key to save the depth map
+	if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+		saveDepthMap = true; // Set the flag to save the depth map
 	}
 }
 

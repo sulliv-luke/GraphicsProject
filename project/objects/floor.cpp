@@ -59,9 +59,11 @@ void Floor::initialize(glm::vec3 position, glm::vec3 scale, const char* textureP
     lightColorID = glGetUniformLocation(programID, "lightColor");
     lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
     cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
+    lightSpaceMatrixID = glGetUniformLocation(programID, "lightSpaceMatrix");
+    shadowMapID = glGetUniformLocation(programID, "shadowMap");
 }
 
-void Floor::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
+void Floor::render(glm::mat4 cameraMatrix,glm::mat4 lightSpaceMatrix, GLuint depthMap, Light light, glm::vec3 cameraPosition) {
     glUseProgram(programID);
 
     glEnableVertexAttribArray(0);
@@ -73,6 +75,14 @@ void Floor::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+    // Set the light space matrix uniform
+    glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+    // Bind the depth map to texture unit 1
+    glActiveTexture(GL_TEXTURE1);
+    glBindTexture(GL_TEXTURE_2D, depthMap);
+    glUniform1i(shadowMapID, 1);
 
     glm::mat4 modelMatrix = glm::mat4(1.0f);
     modelMatrix = glm::translate(modelMatrix, position);
@@ -104,6 +114,32 @@ void Floor::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
 }
+
+void Floor::renderDepth(GLuint shaderProgramID, glm::mat4 lightSpaceMatrix) {
+    glUseProgram(shaderProgramID);
+
+    // Set uniforms
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, position);
+    modelMatrix = glm::scale(modelMatrix, scale);
+
+    glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+
+    glBindVertexArray(vertexArrayID);
+
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, (void*)0);
+
+    glDisableVertexAttribArray(0);
+}
+
 
 void Floor::cleanup() {
     glDeleteBuffers(1, &vertexBufferID);

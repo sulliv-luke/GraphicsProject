@@ -15,7 +15,8 @@ public:
     glm::vec3 scale;    // Size of the floor
 
     void initialize(glm::vec3 position, glm::vec3 scale, const char* texturePath);
-    void render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition);
+    void render(glm::mat4 cameraMatrix,glm::mat4 lightSpaceMatrix, GLuint depthMap, Light light, glm::vec3 cameraPosition);
+    void renderDepth(GLuint shaderProgramID, glm::mat4 lightSpaceMatrix);
     void cleanup();
 
 private:
@@ -40,6 +41,9 @@ private:
 
     GLuint vertexArrayID, vertexBufferID, indexBufferID, uvBufferID, textureID, programID;
     GLuint mvpMatrixID, textureSamplerID, lightPositionID, lightColorID, lightIntensityID, lightDirectionID, cameraPositionID;
+    GLuint lightSpaceMatrixID;
+    GLuint shadowMapID;
+
 
     GLuint LoadTextureTileBox(const char* texture_file_path);
 };
