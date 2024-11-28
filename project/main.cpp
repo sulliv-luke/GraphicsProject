@@ -659,7 +659,7 @@ int main(void)
 	float heightOffset = 100.0f; // Adjust this value as needed
 	flagPosition.y += heightOffset;
 	glm::vec3 flagScale = glm::vec3(30.0f, 15.0f, 1.0f); // Adjust size as needed
-	//flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
+	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
 	// Seed random number generator for varied building sizes and positions
 	std::srand(static_cast<unsigned int>(std::time(0)));
@@ -783,6 +783,8 @@ int main(void)
 		// Set the uniform for the light space matrix
 		glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
 
+		// Render the flagpole depth
+		flag.renderPoleDepth(depthShaderProgramID, lightSpaceMatrix);
 		// Render the scene (buildings and floor) from the light's perspective
 		for (Building& building : buildings) {
 			building.renderDepth(depthShaderProgramID, lightSpaceMatrix);
@@ -817,6 +819,9 @@ int main(void)
 		glDepthFunc(GL_LESS);
 
 		floor.render(vp, lightSpaceMatrix, depthMap, sunLightInfo, cameraPosition);
+		// Render the flagpole
+		flag.renderPole(vp, sunLightInfo, cameraPosition, lightSpaceMatrix, depthMap);
+		flag.render(vp, sunLightInfo, cameraPosition);
 		for (Building& building : buildings) {
 			building.render(vp, lightSpaceMatrix, depthMap);
 		}
@@ -835,7 +840,7 @@ int main(void)
 	}
 
 	skybox.cleanup();
-	//flag.cleanup();
+	flag.cleanup();
 	floor.cleanup();
 	sun.cleanup();
 

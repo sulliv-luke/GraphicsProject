@@ -14,7 +14,8 @@ public:
 
     // Initialization and rendering methods for the pole
     void initializePole(glm::vec3 polePosition, glm::vec3 poleScale);
-    void renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition);
+    void renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition, glm::mat4 lightSpaceMatrix, GLuint shadowMap);
+    void renderPoleDepth(GLuint depthShaderProgramID, glm::mat4 lightSpaceMatrix);
     void cleanupPole();
 
 private:

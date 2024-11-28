@@ -270,12 +270,35 @@ void Flag::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition)
 
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
-
-    // Render the pole
-    renderPole(cameraMatrix, light, cameraPosition);
 }
 
-void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
+void Flag::renderPoleDepth(GLuint depthShaderProgramID, glm::mat4 lightSpaceMatrix) {
+    glUseProgram(depthShaderProgramID);
+
+    glm::mat4 poleModelMatrix = glm::mat4(1.0f);
+    poleModelMatrix = glm::translate(poleModelMatrix, polePosition);
+    poleModelMatrix = glm::scale(poleModelMatrix, poleScale);
+
+    // Set the light space matrix uniform
+    glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+    // Set the model matrix uniform
+    glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "modelMatrix"), 1, GL_FALSE, &poleModelMatrix[0][0]);
+
+    glBindVertexArray(poleVAO);
+
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, poleVBO);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, poleEBO);
+    glDrawElements(GL_TRIANGLES, 36 * 6, GL_UNSIGNED_INT, 0);
+
+    glDisableVertexAttribArray(0);
+}
+
+
+void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition, glm::mat4 lightSpaceMatrix, GLuint shadowMap) {
     glUseProgram(poleProgramID);
 
     glm::mat4 poleModelMatrix = glm::mat4(1.0f);
@@ -289,6 +312,9 @@ void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosit
     glUniformMatrix4fv(poleMVPMatrixID, 1, GL_FALSE, &poleMVP[0][0]);
     glUniformMatrix4fv(glGetUniformLocation(poleProgramID, "modelMatrix"), 1, GL_FALSE, &poleModelMatrix[0][0]);
     glUniformMatrix3fv(glGetUniformLocation(poleProgramID, "normalMatrix"), 1, GL_FALSE, &poleNormalMatrix[0][0]);
+
+    // Pass light space matrix
+    glUniformMatrix4fv(glGetUniformLocation(poleProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
 
     glBindVertexArray(poleVAO);
 
@@ -304,10 +330,9 @@ void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosit
     glBindBuffer(GL_ARRAY_BUFFER, poleNormalBuffer);
     glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
-
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, poleTextureID);
-    glUniform1i(poleTextureSamplerID, 0);
+    glBindTexture(GL_TEXTURE_2D, shadowMap);
+    glUniform1i(glGetUniformLocation(poleProgramID, "shadowMap"), 0);
 
     // Pass lighting uniforms
     glUniform3fv(glGetUniformLocation(poleProgramID, "lightDirection"), 1, &light.direction[0]);
@@ -321,6 +346,7 @@ void Flag::renderPole(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosit
     glDisableVertexAttribArray(0);
     glDisableVertexAttribArray(1);
 }
+
 
 void Flag::cleanupPole() {
     glDeleteBuffers(1, &poleVBO);
