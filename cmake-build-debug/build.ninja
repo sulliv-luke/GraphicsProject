@@ -91,6 +91,13 @@ build CMakeFiles/final_project.dir/project/objects/flag.cpp.obj: CXX_COMPILER__f
   OBJECT_DIR = CMakeFiles\final_project.dir
   OBJECT_FILE_DIR = CMakeFiles\final_project.dir\project\objects
 
+build CMakeFiles/final_project.dir/project/objects/MyBot.cpp.obj: CXX_COMPILER__final_project_unscanned_Debug C$:/Users/sulli/CLionProjects/FinalProject/project/objects/MyBot.cpp || cmake_object_order_depends_target_final_project
+  DEP_FILE = CMakeFiles\final_project.dir\project\objects\MyBot.cpp.obj.d
+  FLAGS = -g -fdiagnostics-color=always
+  INCLUDES = -IC:/Users/sulli/CLionProjects/FinalProject/external/glfw-3.1.2/include -IC:/Users/sulli/CLionProjects/FinalProject/external/glm-0.9.7.1 -IC:/Users/sulli/CLionProjects/FinalProject/external/glad-opengl-3.3/include -IC:/Users/sulli/CLionProjects/FinalProject/external -IC:/Users/sulli/CLionProjects/FinalProject/project -IC:/Users/sulli/CLionProjects/FinalProject/external/glad-3.3/include
+  OBJECT_DIR = CMakeFiles\final_project.dir
+  OBJECT_FILE_DIR = CMakeFiles\final_project.dir\project\objects
+
 build CMakeFiles/final_project.dir/project/objects/sun.cpp.obj: CXX_COMPILER__final_project_unscanned_Debug C$:/Users/sulli/CLionProjects/FinalProject/project/objects/sun.cpp || cmake_object_order_depends_target_final_project
   DEP_FILE = CMakeFiles\final_project.dir\project\objects\sun.cpp.obj.d
   FLAGS = -g -fdiagnostics-color=always
@@ -106,7 +113,7 @@ build CMakeFiles/final_project.dir/project/objects/sun.cpp.obj: CXX_COMPILER__fi
 #############################################
 # Link the executable final_project.exe
 
-build final_project.exe: CXX_EXECUTABLE_LINKER__final_project_Debug CMakeFiles/final_project.dir/project/main.cpp.obj CMakeFiles/final_project.dir/project/render/shader.cpp.obj CMakeFiles/final_project.dir/project/objects/skybox.cpp.obj CMakeFiles/final_project.dir/project/objects/stb_image_impl.cpp.obj CMakeFiles/final_project.dir/project/objects/floor.cpp.obj CMakeFiles/final_project.dir/project/objects/flag.cpp.obj CMakeFiles/final_project.dir/project/objects/sun.cpp.obj | glfw3dll.a libglad.dll.a || glfw3.dll libglad.dll
+build final_project.exe: CXX_EXECUTABLE_LINKER__final_project_Debug CMakeFiles/final_project.dir/project/main.cpp.obj CMakeFiles/final_project.dir/project/render/shader.cpp.obj CMakeFiles/final_project.dir/project/objects/skybox.cpp.obj CMakeFiles/final_project.dir/project/objects/stb_image_impl.cpp.obj CMakeFiles/final_project.dir/project/objects/floor.cpp.obj CMakeFiles/final_project.dir/project/objects/flag.cpp.obj CMakeFiles/final_project.dir/project/objects/MyBot.cpp.obj CMakeFiles/final_project.dir/project/objects/sun.cpp.obj | glfw3dll.a libglad.dll.a || glfw3.dll libglad.dll
   FLAGS = -g
   LINK_LIBRARIES = -lopengl32  -lglu32  glfw3dll.a  libglad.dll.a  -lopengl32  -lkernel32 -luser32 -lgdi32 -lwinspool -lshell32 -lole32 -loleaut32 -luuid -lcomdlg32 -ladvapi32
   OBJECT_DIR = CMakeFiles\final_project.dir

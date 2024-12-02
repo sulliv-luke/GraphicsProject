@@ -18,6 +18,7 @@
 #include "objects/flag.h"
 #include "objects/sun.h"
 #include "utils/lightInfo.h"
+#include "objects/MyBot.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
 
@@ -661,6 +662,10 @@ int main(void)
 	glm::vec3 flagScale = glm::vec3(30.0f, 15.0f, 1.0f); // Adjust size as needed
 	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
+	MyBot bot;
+	bot.initialize("../project/model/scene.gltf");
+
+
 	// Seed random number generator for varied building sizes and positions
 	std::srand(static_cast<unsigned int>(std::time(0)));
 
@@ -825,6 +830,9 @@ int main(void)
 		for (Building& building : buildings) {
 			building.render(vp, lightSpaceMatrix, depthMap);
 		}
+		// Update and render the bot
+		bot.update(currentFrame); // Pass the current time to update animations
+		bot.render(vp);     // Render using the VP matrix
 		sun.render(vp);
 		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 
