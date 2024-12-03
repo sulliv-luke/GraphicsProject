@@ -25,6 +25,7 @@ add_executable(final_project
 		project/objects/flag.cpp
 		project/objects/MyBot.cpp
 		project/objects/sun.cpp
+		project/particles/particle.cpp
 )
 
 target_link_libraries(final_project

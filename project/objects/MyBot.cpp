@@ -116,10 +116,6 @@ void MyBot::render(glm::mat4 cameraMatrix, Light lightInfo) {
     glUseProgram(programID);
 
 	lightPosition = lightInfo.position;
-	std::cout << "The value of lightPosition is: ("
-		  << lightPosition.x << ", "
-		  << lightPosition.y << ", "
-		  << lightPosition.z << ")" << std::endl;
 
 	glm::mat4 modelMatrix = glm::mat4(1.0f);
 	modelMatrix = glm::translate(modelMatrix, position); // Adjust position here

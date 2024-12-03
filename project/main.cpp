@@ -19,6 +19,7 @@
 #include "objects/sun.h"
 #include "utils/lightInfo.h"
 #include "objects/MyBot.h"
+#include "particles/particle.h"
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
 
@@ -648,6 +649,11 @@ int main(void)
 
 	setupFrustum(); // Call during initialization
 
+	// Create particle system
+	GLuint particleShaderProgram = LoadShadersFromFile("../project/particles/particle.vert", "../project/particles/particle.frag");
+	ParticleSystem particleSystem(500, particleShaderProgram);
+	particleSystem.initialize(glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+
 	SkyBox skybox;
 	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
 
@@ -831,6 +837,15 @@ int main(void)
 		for (Building& building : buildings) {
 			building.render(vp, lightSpaceMatrix, depthMap);
 		}
+		glEnable(GL_BLEND);                         // Enable blending for transparency
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function
+		glEnable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
+		// Update particles
+		particleSystem.update(deltaTime, glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+		// Render particles
+		particleSystem.render(projectionMatrix * viewMatrix);
+		glDisable(GL_BLEND);                         // Enable blending for transparency
+		glDisable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
 		// Update and render the bot
 		bot.update(currentFrame); // Pass the current time to update animations
 		bot.render(vp, sunLightInfo);     // Render using the VP matrix
@@ -852,7 +867,8 @@ int main(void)
 	flag.cleanup();
 	floor.cleanup();
 	sun.cleanup();
-
+	bot.cleanup();
+	particleSystem.cleanup();
 	// Close OpenGL window and terminate GLFW
 	glfwTerminate();
 
