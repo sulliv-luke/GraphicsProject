@@ -663,7 +663,7 @@ int main(void)
 	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
 	MyBot bot;
-	bot.initialize("../project/model/scene.gltf");
+	bot.initialize("../project/model/scene.gltf", sunLightInfo);
 
 
 	// Seed random number generator for varied building sizes and positions
@@ -771,6 +771,7 @@ int main(void)
 		}
 
 		sun.updatePosition(lightPosition);
+		sunLightInfo.position = lightPosition;
 
 		// 1. Render depth map from light's point of view
 		glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
@@ -832,7 +833,7 @@ int main(void)
 		}
 		// Update and render the bot
 		bot.update(currentFrame); // Pass the current time to update animations
-		bot.render(vp);     // Render using the VP matrix
+		bot.render(vp, sunLightInfo);     // Render using the VP matrix
 		sun.render(vp);
 		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 

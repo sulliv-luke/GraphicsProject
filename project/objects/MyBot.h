@@ -1,6 +1,7 @@
 #ifndef MYBOT_H
 #define MYBOT_H
 
+#include "utils/lightInfo.h"
 #include <glad/gl.h>
 #include <GLFW/glfw3.h>
 #include <glm/glm.hpp>
@@ -22,13 +23,13 @@ public:
     ~MyBot();
 
     // Initialize the bot (load model, prepare buffers, etc.)
-    bool initialize(const char* modelPath);
+    bool initialize(const char* modelPath, Light lightInfo);
 
     // Update animation state
     void update(float time);
 
     // Render the bot
-    void render(glm::mat4 cameraMatrix);
+    void render(glm::mat4 cameraMatrix, Light lightInfo);
 
     // Cleanup resources
     void cleanup();

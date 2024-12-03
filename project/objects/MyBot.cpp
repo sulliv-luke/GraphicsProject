@@ -23,7 +23,7 @@ MyBot::~MyBot() {
     cleanup();
 }
 
-bool MyBot::initialize(const char* modelPath) {
+bool MyBot::initialize(const char* modelPath, Light lightInfo) {
     // Load model
     if (!loadModel(model, modelPath)) {
         return false;
@@ -37,6 +37,8 @@ bool MyBot::initialize(const char* modelPath) {
 
     // Prepare animation data
     animationObjects = prepareAnimation(model);
+
+	lightPosition = lightInfo.position;
 
     // Create and compile GLSL program from shaders
     // Modify shader paths as needed
@@ -110,8 +112,14 @@ void MyBot::update(float time) {
 
 }
 
-void MyBot::render(glm::mat4 cameraMatrix) {
+void MyBot::render(glm::mat4 cameraMatrix, Light lightInfo) {
     glUseProgram(programID);
+
+	lightPosition = lightInfo.position;
+	std::cout << "The value of lightPosition is: ("
+		  << lightPosition.x << ", "
+		  << lightPosition.y << ", "
+		  << lightPosition.z << ")" << std::endl;
 
 	glm::mat4 modelMatrix = glm::mat4(1.0f);
 	modelMatrix = glm::translate(modelMatrix, position); // Adjust position here
