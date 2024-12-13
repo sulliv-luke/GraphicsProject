@@ -17,6 +17,12 @@
 #include "objects/floor.h"
 #include "objects/flag.h"
 #include "objects/sun.h"
+#include "utils/lightInfo.h"
+#include "objects/MyBot.h"
+#include "particles/particle.h"
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
+
 
 static GLFWwindow *window;
 static void key_callback(GLFWwindow *window, int key, int scancode, int action, int mode);
@@ -36,11 +42,12 @@ static float cameraSpeed = 100.0f;                      // Movement speed
 static float deltaTime = 0.0f;                        // Time between frames
 static float lastFrame = 0.0f;                        // Time of the last frame
 
-static glm::vec3 lightPosition(300.0f, 362.3f, 487.0f); // Sun's position
+static glm::vec3 lightPosition(500.0f, 500.0f, 0.0f); // Sun's position
 static glm::vec3 lightColor(1.0f, 1.0f, 1.0f);      // Warm light color
 static float lightIntensity = 1.2f;             // Brightness multiplier
-static glm::vec3 lightLookAt(91.074f, 114.013f, 213.723f); // Where the light is pointing
+static glm::vec3 lightLookAt(0.0f, 0.0f, 0.0f); // Where the light is pointing
 static glm::vec3 lightDirection;               // Computed in each frame
+Light sunLightInfo(lightDirection, lightPosition, lightColor, lightLookAt, lightIntensity);
 
 
 // Mouse settings
@@ -54,6 +61,15 @@ static float pitch = 0.0f; // Pitch (vertical rotation)
 static float viewAzimuth = 0.f;
 static float viewPolar = 0.f;
 static float viewDistance = 300.0f;
+
+static float lightSpeed = 100.0f; // Movement speed for the light source
+
+// Shadow mapping parameters
+const unsigned int SHADOW_WIDTH = 3072, SHADOW_HEIGHT = 3072;
+GLuint depthMapFBO;
+GLuint depthMap;
+
+
 
 static GLuint LoadTextureTileBox(const char *texture_file_path) {
     int w, h, channels;
@@ -78,6 +94,28 @@ static GLuint LoadTextureTileBox(const char *texture_file_path) {
 
     return texture;
 }
+
+static void saveDepthTexture(GLuint fbo, std::string filename) {
+	int width = SHADOW_WIDTH; // Shadow map width
+	int height = SHADOW_HEIGHT; // Shadow map height
+	int channels = 3;
+
+	std::vector<float> depth(width * height);
+	glBindFramebuffer(GL_FRAMEBUFFER, fbo);
+	glReadPixels(0, 0, width, height, GL_DEPTH_COMPONENT, GL_FLOAT, depth.data());
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	std::vector<unsigned char> img(width * height * 3);
+	for (int i = 0; i < width * height; ++i) {
+		img[3 * i] = img[3 * i + 1] = img[3 * i + 2] = static_cast<unsigned char>(depth[i] * 255.0f);
+	}
+
+	stbi_write_png(filename.c_str(), width, height, channels, img.data(), width * channels);
+}
+bool saveDepthMap = false;
+
+
+
 
 struct Building {
 	glm::vec3 position;		// Position of the box
@@ -265,6 +303,9 @@ struct Building {
 	GLuint lightIntensityID;
 	GLuint cameraPositionID;
 	GLuint normalBufferID;
+	// Shader variable IDs for shadow mapping
+	GLuint lightSpaceMatrixID;
+	GLuint shadowMapID;
 
 	void initialize(glm::vec3 position, glm::vec3 scale) {
 		// Define scale of the building geometry
@@ -335,10 +376,14 @@ struct Building {
 		lightColorID = glGetUniformLocation(programID, "lightColor");
 		lightIntensityID = glGetUniformLocation(programID, "lightIntensity");
 		cameraPositionID = glGetUniformLocation(programID, "cameraPosition");
+		// After loading the shader program
+		lightSpaceMatrixID = glGetUniformLocation(programID, "lightSpaceMatrix");
+		shadowMapID = glGetUniformLocation(programID, "shadowMap");
+
 
 	}
 
-	void render(glm::mat4 cameraMatrix) {
+	void render(glm::mat4 cameraMatrix, glm::mat4 lightSpaceMatrix, GLuint depthMap) {
 		glUseProgram(programID);
 
 		glEnableVertexAttribArray(0);
@@ -350,6 +395,14 @@ struct Building {
 		glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 0, 0);
 
 		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		// Set the light space matrix uniform
+		glUniformMatrix4fv(lightSpaceMatrixID, 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Bind the depth map to texture unit 1
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, depthMap);
+		glUniform1i(shadowMapID, 1);
 
 		// TODO: Model transform
 		// ----------------------
@@ -389,8 +442,6 @@ struct Building {
 		glUniform3fv(lightColorID, 1, &lightColor[0]);
 		glUniform1f(lightIntensityID, lightIntensity);
 		glUniform3fv(cameraPositionID, 1, &cameraPosition[0]);
-		// Calculate light direction
-		lightDirection = glm::normalize(lightLookAt - lightPosition);
 
 		// Pass light direction to the shader
 		glUniform3fv(glGetUniformLocation(programID, "lightDirection"), 1, &lightDirection[0]);
@@ -410,6 +461,31 @@ struct Building {
         //glDisableVertexAttribArray(2);
 	}
 
+	void renderDepth(GLuint shaderProgramID, glm::mat4 lightSpaceMatrix) {
+		glUseProgram(shaderProgramID);
+
+		// Set uniforms
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		glm::mat4 modelMatrix = glm::mat4(1.0f);
+		modelMatrix = glm::translate(modelMatrix, position);
+		modelMatrix = glm::scale(modelMatrix, scale);
+
+		glUniformMatrix4fv(glGetUniformLocation(shaderProgramID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+
+		glBindVertexArray(vertexArrayID);
+
+		glEnableVertexAttribArray(0);
+		glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+		glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+		glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+
+		glDrawElements(GL_TRIANGLES, 36, GL_UNSIGNED_INT, (void*)0);
+
+		glDisableVertexAttribArray(0);
+	}
+
 	void cleanup() {
 		glDeleteBuffers(1, &vertexBufferID);
 		glDeleteBuffers(1, &colorBufferID);
@@ -420,6 +496,87 @@ struct Building {
 		glDeleteProgram(programID);
 	}
 };
+
+void generateBuildingBlock(float x0, float z0, int rows, int cols, float spacing, std::vector<Building> &buildings, std::mt19937 &gen, std::uniform_real_distribution<> &height_dist, std::uniform_real_distribution<> &offset_dist) {
+	for (int i = 0; i < rows; ++i) {
+		for (int j = 0; j < cols; ++j) {
+			Building b;
+
+			// Randomize position with slight offset
+			float x = x0 + i * spacing + offset_dist(gen);
+			float z = z0 + j * spacing + offset_dist(gen);
+			glm::vec3 position = glm::vec3(x, 0, z);
+
+			// Randomize height while keeping width and depth constant
+			float height = height_dist(gen);
+			glm::vec3 scale = glm::vec3(16.0f, height, 16.0f);
+			position.y = height;
+			b.initialize(position, scale);
+			buildings.push_back(b);
+		}
+	}
+}
+
+GLuint frustumVAO, frustumVBO;
+void setupFrustum() {
+	// Generate VAO and VBO for the frustum
+	glGenVertexArrays(1, &frustumVAO);
+	glGenBuffers(1, &frustumVBO);
+
+	glBindVertexArray(frustumVAO);
+	glBindBuffer(GL_ARRAY_BUFFER, frustumVBO);
+
+	// Allocate buffer space (no data yet, as the frustum will update dynamically)
+	glBufferData(GL_ARRAY_BUFFER, 24 * sizeof(glm::vec3), nullptr, GL_DYNAMIC_DRAW);
+
+	// Enable vertex attribute
+	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(glm::vec3), (void*)0);
+	glEnableVertexAttribArray(0);
+
+	glBindVertexArray(0);
+}
+
+void renderFrustum(const glm::mat4& lightProjection, const glm::mat4& lightView, const glm::mat4& vpMatrix, GLuint shaderProgram) {
+	// Frustum corners in light's NDC space
+	std::vector<glm::vec4> frustumCorners = {
+		{-1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f, -1.0f, 1.0f},
+		{1.0f, -1.0f, -1.0f, 1.0f}, {1.0f,  1.0f, -1.0f, 1.0f},
+		{1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f,  1.0f, -1.0f, 1.0f},
+		{-1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f, -1.0f, -1.0f, 1.0f},
+
+		{-1.0f, -1.0f,  1.0f, 1.0f}, {1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f, -1.0f,  1.0f, 1.0f}, {1.0f,  1.0f,  1.0f, 1.0f},
+		{1.0f,  1.0f,  1.0f, 1.0f}, {-1.0f,  1.0f,  1.0f, 1.0f},
+		{-1.0f,  1.0f,  1.0f, 1.0f}, {-1.0f, -1.0f,  1.0f, 1.0f},
+
+		{-1.0f, -1.0f, -1.0f, 1.0f}, {-1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f, -1.0f, -1.0f, 1.0f}, {1.0f, -1.0f,  1.0f, 1.0f},
+		{1.0f,  1.0f, -1.0f, 1.0f}, {1.0f,  1.0f,  1.0f, 1.0f},
+		{-1.0f,  1.0f, -1.0f, 1.0f}, {-1.0f,  1.0f,  1.0f, 1.0f}
+	};
+
+	glm::mat4 lightSpaceInverse = glm::inverse(lightProjection * lightView);
+
+	// Transform corners to world space
+	std::vector<glm::vec3> worldCorners;
+	for (auto& corner : frustumCorners) {
+		glm::vec4 worldPos = lightSpaceInverse * corner;
+		worldCorners.push_back(glm::vec3(worldPos) / worldPos.w);
+	}
+
+	// Update VBO with the transformed corners
+	glBindBuffer(GL_ARRAY_BUFFER, frustumVBO);
+	glBufferSubData(GL_ARRAY_BUFFER, 0, worldCorners.size() * sizeof(glm::vec3), worldCorners.data());
+
+	// Render the frustum
+	glUseProgram(shaderProgram);
+	glUniformMatrix4fv(glGetUniformLocation(shaderProgram, "vpMatrix"), 1, GL_FALSE, &vpMatrix[0][0]);
+
+	glBindVertexArray(frustumVAO);
+	glDrawArrays(GL_LINES, 0, 24); // 24 vertices for the lines
+	glBindVertexArray(0);
+}
+
 
 int main(void)
 {
@@ -465,29 +622,72 @@ int main(void)
 	glEnable(GL_DEPTH_TEST);
 	glEnable(GL_CULL_FACE);
 
+	// Create the depth framebuffer
+	glGenFramebuffers(1, &depthMapFBO);
+
+	// Create the depth texture
+	glGenTextures(1, &depthMap);
+	glBindTexture(GL_TEXTURE_2D, depthMap);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
+				 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+	float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
+	glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
+
+	// Attach the depth texture as the framebuffer's depth buffer
+	glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+	glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, depthMap, 0);
+	glDrawBuffer(GL_NONE);
+	glReadBuffer(GL_NONE);
+	glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+	GLuint depthShaderProgramID = LoadShadersFromFile("../project/depth.vert", "../project/depth.frag");
+	GLuint botDepthShaderProgramID = LoadShadersFromFile("../project/model/bot_depth.vert", "../project/depth.frag");
+	GLuint flagDepthShaderProgramID = LoadShadersFromFile("../project/objects/flag_depth.vert", "../project/depth.frag");
+	GLuint frustumShaderProgramID = LoadShadersFromFile("../project/frustum.vert", "../project/frustum.frag");
+
+	setupFrustum(); // Call during initialization
+
+	// Create particle system
+	GLuint particleShaderProgram = LoadShadersFromFile("../project/particles/particle.vert", "../project/particles/particle.frag");
+	ParticleSystem particleSystem(500, particleShaderProgram);
+	particleSystem.initialize(glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+	ParticleSystem particleSystem2(500, particleShaderProgram);
+	particleSystem2.initialize(glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
+
 	SkyBox skybox;
-	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1000, 1000, 1000));
+	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
 
 	Floor floor;
 	floor.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 1.0f, 500.0f), "../project/floor.jpg");
 
 	Flag flag;
-	glm::vec3 flagPosition = cameraPosition + cameraFront * 50.0f; // Adjust distance as needed
+	glm::vec3 flagPosition = glm::vec3(0,0,0);// Adjust distance as needed
 	// Add a height offset to the y-component
 	float heightOffset = 100.0f; // Adjust this value as needed
 	flagPosition.y += heightOffset;
 	glm::vec3 flagScale = glm::vec3(30.0f, 15.0f, 1.0f); // Adjust size as needed
 	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
+	MyBot bot;
+	bot.initialize("../project/model/scene.gltf", sunLightInfo);
+
+
 	// Seed random number generator for varied building sizes and positions
 	std::srand(static_cast<unsigned int>(std::time(0)));
 
 
-	// TODO: Create more buildings
-	// ---------------------------
-	int rows =5;
-	int cols = 5;
-	float spacing =50.0f;
+	int rows = 7;
+	int cols = 7;
+	float spacing = 50.0f;
+
+	float margin = -200.0f; // Adjust as needed
+	float floorSize = 500.0f;
+	float halfFloor = floorSize / 2.0f;
 
 	std::random_device rd;
 	std::mt19937 gen(rd());
@@ -495,23 +695,25 @@ int main(void)
 	std::uniform_real_distribution<> offset_dist(-5.0f, 5.0f);
 	std::vector<Building> buildings;
 
-	for (int i = 0; i < rows; ++i) {
-		for (int j = 0; j < cols; ++j) {
-			Building b;
+	// Block 1 (Bottom-left corner)
+	float x0_1 = -halfFloor + margin;
+	float z0_1 = -halfFloor + margin;
+	generateBuildingBlock(x0_1, z0_1, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
-			// Randomize position with slight offset
-			float x = i * spacing + offset_dist(gen);
-			float z = j * spacing + offset_dist(gen);
-			glm::vec3 position = glm::vec3(x, 0, z);
+	// Block 2 (Top-left corner)
+	float x0_2 = -halfFloor + margin;
+	float z0_2 = halfFloor - margin - (cols - 1) * spacing;
+	generateBuildingBlock(x0_2, z0_2, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
-			// Randomize height while keeping width and depth constant
-			float height = height_dist(gen);
-			glm::vec3 scale = glm::vec3(16.0f, height, 16.0f);
-			position.y=height;
-			b.initialize(position, scale);
-			buildings.push_back(b);
-		}
-	}
+	// Block 3 (Bottom-right corner)
+	float x0_3 = halfFloor - margin - (rows - 1) * spacing;
+	float z0_3 = -halfFloor + margin;
+	generateBuildingBlock(x0_3, z0_3, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
+
+	// Block 4 (Top-right corner)
+	float x0_4 = halfFloor - margin - (rows - 1) * spacing;
+	float z0_4 = halfFloor - margin - (cols - 1) * spacing;
+	generateBuildingBlock(x0_4, z0_4, rows, cols, spacing, buildings, gen, height_dist, offset_dist);
 
 	// In your main program
 	Sun sun;
@@ -530,12 +732,31 @@ int main(void)
 	glm::float32 zFar = 3000.0f;
 	projectionMatrix = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
 
+	int frameCount = 0;
+	float fpsTimeAccumulator = 0.0f;
+	char windowTitle[128];
+
 	do
 	{
 		// Time management for consistent speed
 		float currentFrame = glfwGetTime();
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
+
+		// Increment frame counter and accumulate elapsed time
+		frameCount++;
+		fpsTimeAccumulator += deltaTime;
+
+		// Calculate FPS once per second
+		if (fpsTimeAccumulator >= 1.0f) {
+			int fps = static_cast<int>(frameCount / fpsTimeAccumulator);
+			frameCount = 0; // Reset frame counter
+			fpsTimeAccumulator = 0.0f; // Reset time accumulator
+
+			// Update window title with FPS
+			snprintf(windowTitle, sizeof(windowTitle), "Final Project - FPS: %d", fps);
+			glfwSetWindowTitle(window, windowTitle);
+		}
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
 			glm::vec3 newPos = cameraPosition + cameraSpeed * deltaTime * cameraFront;
 			if (newPos.y >= 1.8f) { // Ensure camera stays above the floor
@@ -560,45 +781,106 @@ int main(void)
 				cameraPosition = newPos;
 			}
 		}
+		if (glfwGetKey(window, GLFW_KEY_I) == GLFW_PRESS) {
+			lightPosition.z -= lightSpeed * deltaTime; // Move light forwarD
+		}
+		if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS) {
+			lightPosition.z += lightSpeed * deltaTime; // Move light backward
+		}
+		if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS) {
+			lightPosition.x -= lightSpeed * deltaTime; // Move light left
+		}
+		if (glfwGetKey(window, GLFW_KEY_U) == GLFW_PRESS) {
+			lightPosition.y += lightSpeed * deltaTime; // Move light up
+		}
+		if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS) {
+			lightPosition.x += lightSpeed * deltaTime; // Move light right
+		}
+		if (glfwGetKey(window, GLFW_KEY_O) == GLFW_PRESS) {
+			lightPosition.y -= lightSpeed * deltaTime; // Move light down
+		}
+
+		sun.updatePosition(lightPosition);
+		sunLightInfo.position = lightPosition;
+
+		// 1. Render depth map from light's point of view
+		glViewport(0, 0, SHADOW_WIDTH, SHADOW_HEIGHT);
+		glBindFramebuffer(GL_FRAMEBUFFER, depthMapFBO);
+		glClear(GL_DEPTH_BUFFER_BIT);
+
+		glUseProgram(depthShaderProgramID);
+
+		// Compute light's view and projection matrices
+		float near_plane = 10.0f, far_plane = 1200.0f;
+		float orthoSize = 600.0f; // Current size
+		glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near_plane, far_plane);
+		glm::mat4 lightView = glm::lookAt(lightPosition, lightLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
+		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
+
+		// Set the uniform for the light space matrix
+		glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+
+		// Render the flagpole depth
+		flag.renderPoleDepth(depthShaderProgramID, lightSpaceMatrix);
+		flag.renderFlagDepth(flagDepthShaderProgramID, lightSpaceMatrix);
+		// Render the scene (buildings and floor) from the light's perspective
+		for (Building& building : buildings) {
+			building.renderDepth(depthShaderProgramID, lightSpaceMatrix);
+		}
+		bot.renderDepth(botDepthShaderProgramID, lightSpaceMatrix);
+		floor.renderDepth(depthShaderProgramID, lightSpaceMatrix);
+
+		// Unbind the framebuffer
+		glBindFramebuffer(GL_FRAMEBUFFER, 0);
+		if (saveDepthMap) {
+			saveDepthTexture(depthMapFBO, "depth_map.png");
+			std::cout << "Depth map saved to depth_map.png" << std::endl;
+			saveDepthMap = false; // Reset the flag after saving
+		}
 
 
+		// Reset viewport
+		glViewport(0, 0, 1024, 768);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-		// Update view matrix
+		// Calculate light direction (if it changes over time)
+		lightDirection = glm::normalize(lightLookAt - lightPosition);
+		sunLightInfo.direction = lightDirection;
+
+		// Update view and projection matrices
 		viewMatrix = glm::lookAt(cameraPosition, cameraPosition + cameraFront, cameraUp);
 		glm::mat4 vp = projectionMatrix * viewMatrix;
 
-		// Debug: Print camera position and lookat direction
-		std::cout << "Camera Position: ("
-				  << cameraPosition.x << ", "
-				  << cameraPosition.y << ", "
-				  << cameraPosition.z << ") LookAt: ("
-				  << (cameraPosition + cameraFront).x << ", "
-				  << (cameraPosition + cameraFront).y << ", "
-				  << (cameraPosition + cameraFront).z << ")"
-				  << std::endl;
-
-		// Render the skybox
-		glDepthFunc(GL_LEQUAL); // Change depth function to avoid z-fighting
+		// Render the skybox, floor, buildings, and sun
+		glDepthFunc(GL_LEQUAL);
 		glm::mat4 skyboxModel = glm::translate(glm::mat4(1.0f), cameraPosition);
 		skybox.render(vp * skyboxModel);
-		glDepthFunc(GL_LESS); // Reset depth function
+		glDepthFunc(GL_LESS);
 
-		// Render the floor
-		floor.render(vp);
-
-		// Render the buildings
-		for (Building building : buildings) {
-			building.render(vp);
+		floor.render(vp, lightSpaceMatrix, depthMap, sunLightInfo, cameraPosition);
+		// Render the flagpole
+		flag.renderPole(vp, sunLightInfo, cameraPosition, lightSpaceMatrix, depthMap);
+		flag.render(vp, sunLightInfo, cameraPosition);
+		for (Building& building : buildings) {
+			building.render(vp, lightSpaceMatrix, depthMap);
 		}
-
-		// Render the flag
-		flag.render(vp);
-
+		glEnable(GL_BLEND);                         // Enable blending for transparency
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function
+		glEnable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
+		// Update particles
+		particleSystem.update(deltaTime, glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+		particleSystem2.update(deltaTime, glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
+		// Render particles
+		particleSystem.render(projectionMatrix * viewMatrix);
+		particleSystem2.render(projectionMatrix * viewMatrix);
+		glDisable(GL_BLEND);                         // Enable blending for transparency
+		glDisable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
+		// Update and render the bot
+		bot.update(currentFrame); // Pass the current time to update animations
+		bot.render(vp, sunLightInfo, lightSpaceMatrix, depthMap);
 		sun.render(vp);
+		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 
-
-		// Swap buffers
 		glfwSwapBuffers(window);
 		glfwPollEvents();
 
@@ -614,7 +896,8 @@ int main(void)
 	flag.cleanup();
 	floor.cleanup();
 	sun.cleanup();
-
+	bot.cleanup();
+	particleSystem.cleanup();
 	// Close OpenGL window and terminate GLFW
 	glfwTerminate();
 
@@ -627,6 +910,10 @@ void key_callback(GLFWwindow *window, int key, int scancode, int action, int mod
 {
 	if (key == GLFW_KEY_ESCAPE && action == GLFW_PRESS) {
 		glfwSetWindowShouldClose(window, GL_TRUE); // Close window
+	}
+	// Check for the 'P' key to save the depth map
+	if (key == GLFW_KEY_P && action == GLFW_PRESS) {
+		saveDepthMap = true; // Set the flag to save the depth map
 	}
 }
 
