@@ -10,6 +10,7 @@ public:
     // Initialization and rendering methods for the flag
     void initialize(glm::vec3 position, glm::vec3 scale, const char* texturePath);
     void render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition);
+    void renderFlagDepth(GLuint depthShaderProgramID, glm::mat4 lightSpaceMatrix);
     void cleanup();
 
     // Initialization and rendering methods for the pole

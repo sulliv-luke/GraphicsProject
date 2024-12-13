@@ -9,10 +9,12 @@ layout(location = 4) in vec4 inWeights;    // Joint weights
 // Uniforms
 uniform mat4 MVP;                  // Model-View-Projection matrix
 uniform mat4 jointMatrices[50];    // Array of joint matrices
+uniform mat4 lightSpaceMatrix;     // Light space matrix for shadow mapping
 
 // Outputs to the fragment shader
-out vec3 worldPosition;
-out vec3 worldNormal;
+out vec3 worldPosition;            // Vertex position in world space
+out vec3 worldNormal;              // Vertex normal in world space
+out vec4 fragPosLightSpace;        // Vertex position in light space
 
 void main() {
     // Skinning transformation
@@ -41,6 +43,9 @@ void main() {
     // Pass world-space data to the fragment shader
     worldPosition = vec3(skinnedPosition);
     worldNormal = normalize(skinnedNormal);
+
+    // Transform position to light space
+    fragPosLightSpace = lightSpaceMatrix * skinnedPosition;
 
     // Transform to clip space
     gl_Position = MVP * skinnedPosition;

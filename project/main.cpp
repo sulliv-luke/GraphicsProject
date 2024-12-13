@@ -65,7 +65,7 @@ static float viewDistance = 300.0f;
 static float lightSpeed = 100.0f; // Movement speed for the light source
 
 // Shadow mapping parameters
-const unsigned int SHADOW_WIDTH = 2048, SHADOW_HEIGHT = 2048;
+const unsigned int SHADOW_WIDTH = 3072, SHADOW_HEIGHT = 3072;
 GLuint depthMapFBO;
 GLuint depthMap;
 
@@ -630,8 +630,9 @@ int main(void)
 	glBindTexture(GL_TEXTURE_2D, depthMap);
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT,
 				 SHADOW_WIDTH, SHADOW_HEIGHT, 0, GL_DEPTH_COMPONENT, GL_FLOAT, NULL);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
 	float borderColor[] = {1.0f, 1.0f, 1.0f, 1.0f};
@@ -645,6 +646,8 @@ int main(void)
 	glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
 	GLuint depthShaderProgramID = LoadShadersFromFile("../project/depth.vert", "../project/depth.frag");
+	GLuint botDepthShaderProgramID = LoadShadersFromFile("../project/model/bot_depth.vert", "../project/depth.frag");
+	GLuint flagDepthShaderProgramID = LoadShadersFromFile("../project/objects/flag_depth.vert", "../project/depth.frag");
 	GLuint frustumShaderProgramID = LoadShadersFromFile("../project/frustum.vert", "../project/frustum.frag");
 
 	setupFrustum(); // Call during initialization
@@ -653,6 +656,8 @@ int main(void)
 	GLuint particleShaderProgram = LoadShadersFromFile("../project/particles/particle.vert", "../project/particles/particle.frag");
 	ParticleSystem particleSystem(500, particleShaderProgram);
 	particleSystem.initialize(glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+	ParticleSystem particleSystem2(500, particleShaderProgram);
+	particleSystem2.initialize(glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
 
 	SkyBox skybox;
 	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
@@ -727,12 +732,31 @@ int main(void)
 	glm::float32 zFar = 3000.0f;
 	projectionMatrix = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
 
+	int frameCount = 0;
+	float fpsTimeAccumulator = 0.0f;
+	char windowTitle[128];
+
 	do
 	{
 		// Time management for consistent speed
 		float currentFrame = glfwGetTime();
 		deltaTime = currentFrame - lastFrame;
 		lastFrame = currentFrame;
+
+		// Increment frame counter and accumulate elapsed time
+		frameCount++;
+		fpsTimeAccumulator += deltaTime;
+
+		// Calculate FPS once per second
+		if (fpsTimeAccumulator >= 1.0f) {
+			int fps = static_cast<int>(frameCount / fpsTimeAccumulator);
+			frameCount = 0; // Reset frame counter
+			fpsTimeAccumulator = 0.0f; // Reset time accumulator
+
+			// Update window title with FPS
+			snprintf(windowTitle, sizeof(windowTitle), "Final Project - FPS: %d", fps);
+			glfwSetWindowTitle(window, windowTitle);
+		}
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
 			glm::vec3 newPos = cameraPosition + cameraSpeed * deltaTime * cameraFront;
 			if (newPos.y >= 1.8f) { // Ensure camera stays above the floor
@@ -787,8 +811,9 @@ int main(void)
 		glUseProgram(depthShaderProgramID);
 
 		// Compute light's view and projection matrices
-		float near_plane = 1.0f, far_plane = 2000.0f;
-		glm::mat4 lightProjection = glm::ortho(-1000.0f, 1000.0f, -1000.0f, 1000.0f, near_plane, far_plane);
+		float near_plane = 10.0f, far_plane = 1200.0f;
+		float orthoSize = 600.0f; // Current size
+		glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near_plane, far_plane);
 		glm::mat4 lightView = glm::lookAt(lightPosition, lightLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
 
@@ -797,10 +822,12 @@ int main(void)
 
 		// Render the flagpole depth
 		flag.renderPoleDepth(depthShaderProgramID, lightSpaceMatrix);
+		flag.renderFlagDepth(flagDepthShaderProgramID, lightSpaceMatrix);
 		// Render the scene (buildings and floor) from the light's perspective
 		for (Building& building : buildings) {
 			building.renderDepth(depthShaderProgramID, lightSpaceMatrix);
 		}
+		bot.renderDepth(botDepthShaderProgramID, lightSpaceMatrix);
 		floor.renderDepth(depthShaderProgramID, lightSpaceMatrix);
 
 		// Unbind the framebuffer
@@ -842,13 +869,15 @@ int main(void)
 		glEnable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
 		// Update particles
 		particleSystem.update(deltaTime, glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+		particleSystem2.update(deltaTime, glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
 		// Render particles
 		particleSystem.render(projectionMatrix * viewMatrix);
+		particleSystem2.render(projectionMatrix * viewMatrix);
 		glDisable(GL_BLEND);                         // Enable blending for transparency
 		glDisable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
 		// Update and render the bot
 		bot.update(currentFrame); // Pass the current time to update animations
-		bot.render(vp, sunLightInfo);     // Render using the VP matrix
+		bot.render(vp, sunLightInfo, lightSpaceMatrix, depthMap);
 		sun.render(vp);
 		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 

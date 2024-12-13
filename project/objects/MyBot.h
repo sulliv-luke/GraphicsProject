@@ -29,7 +29,8 @@ public:
     void update(float time);
 
     // Render the bot
-    void render(glm::mat4 cameraMatrix, Light lightInfo);
+    void render(glm::mat4 cameraMatrix, Light lightInfo, glm::mat4 lightSpaceMatrix, GLuint shadowMapID);
+    void renderDepth(GLuint shadowShaderProgramID, glm::mat4 lightSpaceMatrix);
 
     // Cleanup resources
     void cleanup();

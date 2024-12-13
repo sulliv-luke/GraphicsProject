@@ -105,35 +105,65 @@ void MyBot::update(float time) {
         updateSkinning(model.skins[0], globalTransforms);
     }
 	// Move the bot forward along the Z-axis
-	position.z += speed * 0.016f; // Adjust 0.016 for time delta if available
+	position.z += speed * 0.032f; // Adjust 0.016 for time delta if available
 	if (position.z > 500.0f) { // Example condition
 		position.z = -500.0f;  // Reset position
 	}
 
 }
 
-void MyBot::render(glm::mat4 cameraMatrix, Light lightInfo) {
-    glUseProgram(programID);
+void MyBot::renderDepth(GLuint shadowShaderProgramID, glm::mat4 lightSpaceMatrix) {
+	glUseProgram(shadowShaderProgramID);
+
+	// Compute the model matrix for the bot
+	glm::mat4 modelMatrix = glm::mat4(1.0f);
+	modelMatrix = glm::translate(modelMatrix, position); // Apply translation
+	modelMatrix = glm::scale(modelMatrix, glm::vec3(0.25f, 0.25f, 0.25f)); // Apply scaling
+
+	// Pass uniforms to the shader
+	glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+	glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgramID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+
+	// Pass the joint matrices for skinning
+	glUniformMatrix4fv(glGetUniformLocation(shadowShaderProgramID, "jointMatrices"), skinObjects[0].jointMatrices.size(), GL_FALSE, glm::value_ptr(skinObjects[0].jointMatrices[0]));
+
+	// Draw the bot model
+	drawModel(primitiveObjects, model);
+}
+
+
+
+void MyBot::render(glm::mat4 cameraMatrix, Light lightInfo, glm::mat4 lightSpaceMatrix, GLuint shadowMapID) {
+	glUseProgram(programID);
 
 	lightPosition = lightInfo.position;
 
+	// Model matrix
 	glm::mat4 modelMatrix = glm::mat4(1.0f);
-	modelMatrix = glm::translate(modelMatrix, position); // Adjust position here
-	modelMatrix = glm::scale(modelMatrix, glm::vec3(0.25f, 0.25f, 0.25f)); // Scale down to a quarter
-    // Set camera
-    glm::mat4 mvp = cameraMatrix * modelMatrix;
-    glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
+	modelMatrix = glm::translate(modelMatrix, position); // Apply translation
+	modelMatrix = glm::scale(modelMatrix, glm::vec3(0.25f, 0.25f, 0.25f)); // Apply scaling
 
-    // Set animation data for linear blend skinning in shader
-    glUniformMatrix4fv(jointMatricesID, skinObjects[0].jointMatrices.size(), GL_FALSE, glm::value_ptr(skinObjects[0].jointMatrices[0]));
+	// MVP matrix
+	glm::mat4 mvp = cameraMatrix * modelMatrix;
+	glUniformMatrix4fv(mvpMatrixID, 1, GL_FALSE, &mvp[0][0]);
 
-    // Set light data
-    glUniform3fv(lightPositionID, 1, &lightPosition[0]);
-    glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+	// Pass light space matrix and shadow map
+	glUniformMatrix4fv(glGetUniformLocation(programID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+	glActiveTexture(GL_TEXTURE1); // Bind shadow map to texture unit 1
+	glBindTexture(GL_TEXTURE_2D, shadowMapID);
+	glUniform1i(glGetUniformLocation(programID, "shadowMap"), 1);
 
-    // Draw the GLTF model
-    drawModel(primitiveObjects, model);
+	// Pass animation data for linear blend skinning
+	glUniformMatrix4fv(jointMatricesID, skinObjects[0].jointMatrices.size(), GL_FALSE, glm::value_ptr(skinObjects[0].jointMatrices[0]));
+
+	// Pass light data
+	glUniform3fv(lightPositionID, 1, &lightPosition[0]);
+	glUniform3fv(lightIntensityID, 1, &lightIntensity[0]);
+
+	// Draw the bot model
+	drawModel(primitiveObjects, model);
 }
+
 
 void MyBot::cleanup() {
     glDeleteProgram(programID);

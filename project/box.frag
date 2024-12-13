@@ -21,9 +21,9 @@ float ShadowCalculation(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
 	float closestDepth = texture(shadowMap, projCoords.xy).r;
 	float currentDepth = projCoords.z;
 	float bias = max(0.005 * (1.0 - dot(normal, lightDir)), 0.001);
-	float shadow = currentDepth - bias > closestDepth ? 1.0 : 0.0;
+	float shadow = currentDepth - bias > closestDepth ? 0.6 : 0.0;
 	if (projCoords.z > 1.0 || projCoords.z < 0.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0) {
-		return 1.0; // Fully shadowed
+		return 0.6; // Fully shadowed
 	}
 	return shadow;
 }
@@ -40,7 +40,7 @@ void main() {
 	float shininess = 60.0f;
 	float spec = pow(max(dot(viewDir, reflectDir), 0.0), shininess);
 
-	vec3 ambient = 0.1 * lightColor;
+	vec3 ambient = 0.3 * lightColor;
 	vec3 diffuse = diff * lightColor;
 	vec3 specular = spec * lightColor;
 

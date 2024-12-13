@@ -214,6 +214,38 @@ void Flag::initialize(glm::vec3 position, glm::vec3 scale, const char* texturePa
     initializePole(polePosition, poleScale); // Initialize the pole
 }
 
+void Flag::renderFlagDepth(GLuint depthShaderProgramID, glm::mat4 lightSpaceMatrix) {
+    glUseProgram(depthShaderProgramID);
+
+    // Model matrix
+    glm::mat4 modelMatrix = glm::mat4(1.0f);
+    modelMatrix = glm::translate(modelMatrix, position);
+    modelMatrix = glm::scale(modelMatrix, scale);
+
+    // Set uniforms
+    glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "lightSpaceMatrix"), 1, GL_FALSE, &lightSpaceMatrix[0][0]);
+    glUniformMatrix4fv(glGetUniformLocation(depthShaderProgramID, "modelMatrix"), 1, GL_FALSE, &modelMatrix[0][0]);
+
+    float currentTime = glfwGetTime() - startTime;
+    glUniform1f(glGetUniformLocation(depthShaderProgramID, "Time"), currentTime);
+
+    // Bind VAO
+    glBindVertexArray(vertexArrayID);
+
+    // Enable vertex attribute array
+    glEnableVertexAttribArray(0);
+    glBindBuffer(GL_ARRAY_BUFFER, vertexBufferID);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 0, 0);
+
+    // Draw elements
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, indexBufferID);
+    glDrawElements(GL_TRIANGLES, numSegments * numSegments * 6, GL_UNSIGNED_INT, 0);
+
+    glDisableVertexAttribArray(0);
+}
+
+
+
 
 
 void Flag::render(glm::mat4 cameraMatrix, Light light, glm::vec3 cameraPosition) {
