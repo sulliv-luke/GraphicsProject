@@ -23,7 +23,9 @@ public:
     ~MyBot();
 
     // Initialize the bot (load model, prepare buffers, etc.)
-    bool initialize(const char* modelPath, Light lightInfo);
+    bool initialize(const char* modelPath, Light lightInfo, glm::vec3 pos);
+
+    void setPosition(const glm::vec3& newPosition);
 
     // Update animation state
     void update(float time);
@@ -41,6 +43,8 @@ public:
 
     void setLoopParameters(float startTime, float endTime);
     void enableLooping(bool enable);
+    // Shader and rendering variables
+    GLuint programID;
 
 private:
     // Nested structs for managing bot components
@@ -120,8 +124,6 @@ private:
     glm::vec3 position; // Current position of the bot
     float speed;        // Speed of movement
 
-    // Shader and rendering variables
-    GLuint programID;
     GLuint mvpMatrixID;
     GLuint jointMatricesID;
     GLuint lightPositionID;

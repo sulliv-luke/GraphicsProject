@@ -17,7 +17,7 @@ include_directories(
 )
 
 add_executable(final_project
-		project/main.cpp
+        project/main.cpp
 		project/render/shader.cpp
 		project/objects/skybox.cpp
 		project/objects/stb_image_impl.cpp
