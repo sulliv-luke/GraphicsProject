@@ -65,7 +65,7 @@ static float viewDistance = 300.0f;
 static float lightSpeed = 100.0f; // Movement speed for the light source
 
 // Shadow mapping parameters
-const unsigned int SHADOW_WIDTH = 3072, SHADOW_HEIGHT = 3072;
+const unsigned int SHADOW_WIDTH = 4096, SHADOW_HEIGHT = 4096;
 GLuint depthMapFBO;
 GLuint depthMap;
 
@@ -404,7 +404,6 @@ struct Building {
 		glBindTexture(GL_TEXTURE_2D, depthMap);
 		glUniform1i(shadowMapID, 1);
 
-		// TODO: Model transform
 		// ----------------------
 		// Create the model transformation matrix
 		glm::mat4 modelMatrix = glm::mat4(1.0f);
@@ -616,6 +615,7 @@ int main(void)
 		return -1;
 	}
 
+
 	// Background
 	glClearColor(0.2f, 0.2f, 0.25f, 0.0f);
 
@@ -655,15 +655,16 @@ int main(void)
 	// Create particle system
 	GLuint particleShaderProgram = LoadShadersFromFile("../project/particles/particle.vert", "../project/particles/particle.frag");
 	ParticleSystem particleSystem(500, particleShaderProgram);
-	particleSystem.initialize(glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
+	particleSystem.initialize(glm::vec3(-500, 200, -500), glm::vec3(500, 200, 500));
 	ParticleSystem particleSystem2(500, particleShaderProgram);
-	particleSystem2.initialize(glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
+	particleSystem2.initialize(glm::vec3(-500, 200, 500), glm::vec3(500, 200, -500));
 
 	SkyBox skybox;
-	skybox.initialize(glm::vec3(0,0,0), glm::vec3(1500, 1500, 1500));
+	skybox.initialize(glm::vec3(0,0,0), glm::vec3(2500, 2500, 2500));
 
+	float floorSize = 1000.0f;
 	Floor floor;
-	floor.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(500.0f, 1.0f, 500.0f), "../project/floor.jpg");
+	floor.initialize(glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(floorSize, 1.0f, floorSize), "../project/floor.jpg");
 
 	Flag flag;
 	glm::vec3 flagPosition = glm::vec3(0,0,0);// Adjust distance as needed
@@ -674,19 +675,20 @@ int main(void)
 	flag.initialize(flagPosition, flagScale, "../project/ireland_flag.jpg");
 
 	MyBot bot;
-	bot.initialize("../project/model/scene.gltf", sunLightInfo);
+	bot.initialize("../project/model/scene.gltf", sunLightInfo, glm::vec3(-100.0f, 0.0f, -500.0f));
 
+	MyBot bot2;
+	bot2.initialize("../project/model/scene.gltf", sunLightInfo, glm::vec3(100.0f, 0.0f, -500.0f));
 
 	// Seed random number generator for varied building sizes and positions
 	std::srand(static_cast<unsigned int>(std::time(0)));
 
 
-	int rows = 7;
-	int cols = 7;
+	int rows = 10;
+	int cols = 10;
 	float spacing = 50.0f;
 
 	float margin = -200.0f; // Adjust as needed
-	float floorSize = 500.0f;
 	float halfFloor = floorSize / 2.0f;
 
 	std::random_device rd;
@@ -729,7 +731,7 @@ int main(void)
 	glm::mat4 viewMatrix, projectionMatrix;
     glm::float32 FoV = 45;
 	glm::float32 zNear = 0.1f;
-	glm::float32 zFar = 3000.0f;
+	glm::float32 zFar = 4500.0f;
 	projectionMatrix = glm::perspective(glm::radians(FoV), 4.0f / 3.0f, zNear, zFar);
 
 	int frameCount = 0;
@@ -757,6 +759,12 @@ int main(void)
 			snprintf(windowTitle, sizeof(windowTitle), "Final Project - FPS: %d", fps);
 			glfwSetWindowTitle(window, windowTitle);
 		}
+
+		// Print the current camera position
+		std::cout << "Camera Position: ("
+				  << cameraPosition.x << ", "
+				  << cameraPosition.y << ", "
+				  << cameraPosition.z << ")" << std::endl;
 		if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
 			glm::vec3 newPos = cameraPosition + cameraSpeed * deltaTime * cameraFront;
 			if (newPos.y >= 1.8f) { // Ensure camera stays above the floor
@@ -811,8 +819,8 @@ int main(void)
 		glUseProgram(depthShaderProgramID);
 
 		// Compute light's view and projection matrices
-		float near_plane = 10.0f, far_plane = 1200.0f;
-		float orthoSize = 600.0f; // Current size
+		float near_plane = 10.0f, far_plane = 1800.0f;
+		float orthoSize = 1000.0f; // Current size
 		glm::mat4 lightProjection = glm::ortho(-orthoSize, orthoSize, -orthoSize, orthoSize, near_plane, far_plane);
 		glm::mat4 lightView = glm::lookAt(lightPosition, lightLookAt, glm::vec3(0.0f, 1.0f, 0.0f));
 		glm::mat4 lightSpaceMatrix = lightProjection * lightView;
@@ -828,6 +836,8 @@ int main(void)
 			building.renderDepth(depthShaderProgramID, lightSpaceMatrix);
 		}
 		bot.renderDepth(botDepthShaderProgramID, lightSpaceMatrix);
+		bot2.renderDepth(botDepthShaderProgramID, lightSpaceMatrix);
+
 		floor.renderDepth(depthShaderProgramID, lightSpaceMatrix);
 
 		// Unbind the framebuffer
@@ -868,16 +878,18 @@ int main(void)
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA); // Set blending function
 		glEnable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
 		// Update particles
-		particleSystem.update(deltaTime, glm::vec3(-200, 200, -200), glm::vec3(200, 200, 200));
-		particleSystem2.update(deltaTime, glm::vec3(-200, 200, 200), glm::vec3(200, 200, -200));
+		particleSystem.update(deltaTime, glm::vec3(-500, 200, -500), glm::vec3(500, 200, 500));
+		particleSystem2.update(deltaTime, glm::vec3(-500, 200, 500), glm::vec3(500, 200, -500));
 		// Render particles
 		particleSystem.render(projectionMatrix * viewMatrix);
 		particleSystem2.render(projectionMatrix * viewMatrix);
 		glDisable(GL_BLEND);                         // Enable blending for transparency
 		glDisable(GL_PROGRAM_POINT_SIZE);            // Allow control of point size in shaders
-		// Update and render the bot
-		bot.update(currentFrame); // Pass the current time to update animations
+		bot.update(currentFrame);    // Pass the current time to update animations
 		bot.render(vp, sunLightInfo, lightSpaceMatrix, depthMap);
+		bot2.update(currentFrame);
+		bot2.render(vp, sunLightInfo, lightSpaceMatrix, depthMap);
+
 		sun.render(vp);
 		renderFrustum(lightProjection, lightView, projectionMatrix * viewMatrix, frustumShaderProgramID);
 

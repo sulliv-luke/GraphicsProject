@@ -23,11 +23,14 @@ MyBot::~MyBot() {
     cleanup();
 }
 
-bool MyBot::initialize(const char* modelPath, Light lightInfo) {
+
+bool MyBot::initialize(const char* modelPath, Light lightInfo, glm::vec3 pos) {
     // Load model
     if (!loadModel(model, modelPath)) {
         return false;
     }
+
+	position = pos;
 
     // Prepare buffers for rendering
     primitiveObjects = bindModel(model);
